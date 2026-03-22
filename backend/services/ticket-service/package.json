@@ -1,0 +1,30 @@
+{
+  "name": "@repo/ticket-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "tsup src/index.ts --format cjs,esm",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema=../../packages/database/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=../../packages/database/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema=../../packages/database/prisma/schema.prisma",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@repo/database": "workspace:*",
+    "@repo/shared": "workspace:*",
+    "hono": "^4.7.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "prisma": "^6.3.0",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

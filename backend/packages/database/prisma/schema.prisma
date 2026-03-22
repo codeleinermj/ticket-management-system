@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+  USER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING_MANUAL_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TicketCategory {
+  BUG
+  FEATURE_REQUEST
+  SUPPORT
+  BILLING
+  OTHER
+}
+
+enum AiStatus {
+  PENDING
+  CLASSIFIED
+  FAILED
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  password       String
+  name           String
+  role           UserRole @default(USER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  refreshToken   String?
+
+  tickets        Ticket[]       @relation("CreatedTickets")
+  assignedTickets Ticket[]      @relation("AssignedTickets")
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+model Ticket {
+  id          String          @id @default(uuid())
+  title       String
+  description String
+  status      TicketStatus    @default(OPEN)
+  priority    TicketPriority?
+  category    TicketCategory?
+  aiResponse  String?
+  aiStatus    AiStatus        @default(PENDING)
+  confidence  Float?
+
+  createdById String
+  createdBy   User            @relation("CreatedTickets", fields: [createdById], references: [id])
+
+  assignedToId String?
+  assignedTo   User?          @relation("AssignedTickets", fields: [assignedToId], references: [id])
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  auditLogs   AuditLog[]
+  aiResults   AiResult[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([aiStatus])
+  @@map("tickets")
+}
+
+model AiResult {
+  id                String         @id @default(uuid())
+  ticketId          String
+  ticket            Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  provider          String
+  category          TicketCategory
+  priority          TicketPriority
+  suggestedResponse String
+  confidence        Float
+  accepted          Boolean?
+  createdAt         DateTime       @default(now())
+
+  @@index([ticketId])
+  @@map("ai_results")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  field     String?
+  oldValue  String?
+  newValue  String?
+
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([userId])
+  @@map("audit_logs")
+}
