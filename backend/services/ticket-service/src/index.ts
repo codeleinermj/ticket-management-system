@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { ticketRoutes } from "./routes/tickets";
 import { authRoutes } from "./routes/auth";
 import { aiFeedbackRoutes } from "./routes/ai-feedback";
+import { userRoutes } from "./routes/users";
+import { commentRoutes } from "./routes/comments";
+import { notificationRoutes } from "./routes/notifications";
 import { prisma } from "./lib/prisma";
 import { redis } from "./lib/redis";
 import { config } from "./config";
@@ -38,6 +41,9 @@ app.get("/health", async (c) => {
 app.route("/auth", authRoutes);
 app.route("/tickets", ticketRoutes);
 app.route("/tickets", aiFeedbackRoutes);
+app.route("/tickets", commentRoutes);
+app.route("/users", userRoutes);
+app.route("/notifications", notificationRoutes);
 
 const port = config.TICKET_SERVICE_PORT;
 

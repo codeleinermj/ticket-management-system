@@ -2,11 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useTicket, useUpdateTicket, useDeleteTicket } from "@/hooks/use-tickets";
+import { useAgents } from "@/hooks/use-users";
 import { useAuthStore } from "@/stores/auth";
 import { StatusBadge } from "./status-badge";
 import { PriorityBadge } from "./priority-badge";
 import { AiSuggestion } from "./ai-suggestion";
 import { TicketAuditLog } from "./ticket-audit-log";
+import { TicketComments } from "./ticket-comments";
 import {
   Card,
   CardContent,
@@ -35,6 +37,8 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
   const updateTicket = useUpdateTicket();
   const deleteTicket = useDeleteTicket();
   const user = useAuthStore((s) => s.user);
+  const isAgent = user?.role === UserRole.AGENT || user?.role === UserRole.ADMIN;
+  const { data: agentsData } = useAgents();
 
   if (isLoading) {
     return (
@@ -66,7 +70,7 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
   }
 
   const ticket = data.data;
-  const isAgent = user?.role === UserRole.AGENT || user?.role === UserRole.ADMIN;
+  const agents = agentsData?.data || [];
 
   const handleStatusChange = (status: TicketStatus) => {
     updateTicket.mutate(
@@ -87,6 +91,16 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
       },
       onError: () => toast.error("Error al eliminar"),
     });
+  };
+
+  const handleAssign = (assignedToId: string) => {
+    updateTicket.mutate(
+      { id: ticketId, data: { assignedToId: assignedToId || undefined } },
+      {
+        onSuccess: () => toast.success("Ticket asignado"),
+        onError: () => toast.error("Error al asignar"),
+      }
+    );
   };
 
   return (
@@ -142,6 +156,8 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
             priority={ticket.priority}
             isAgent={isAgent}
           />
+
+          <TicketComments ticketId={ticketId} />
 
           <Card>
             <CardHeader>
@@ -209,9 +225,28 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
                 <span className="text-sm text-muted-foreground">
                   Asignado a
                 </span>
-                <span className="text-sm font-medium">
-                  {ticket.assignedTo?.name || "Sin asignar"}
-                </span>
+                {isAgent ? (
+                  <Select
+                    value={ticket.assignedToId || "unassigned"}
+                    onValueChange={(v) => handleAssign(v === "unassigned" ? "" : v)}
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Sin asignar</SelectItem>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="text-sm font-medium">
+                    {ticket.assignedTo?.name || "Sin asignar"}
+                  </span>
+                )}
               </div>
               <Separator />
               <div className="flex items-center justify-between">

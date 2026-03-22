@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { ticketRepository } from "../repositories/ticket.repository";
 import { auditRepository } from "../repositories/audit.repository";
+import { notificationRepository } from "../repositories/notification.repository";
 import { webhookService } from "../services/webhook.service";
 import { NotFoundError, ForbiddenError } from "@repo/shared";
 
@@ -97,7 +98,26 @@ ticketRoutes.patch("/:id", async (c) => {
 
   await auditRepository.logChanges(id, userId, existing as any, body);
 
+  // Notify on assignment
+  if (body.assignedToId && body.assignedToId !== existing.assignedToId) {
+    await notificationRepository.create({
+      type: "assignment",
+      title: "Ticket asignado",
+      message: `Se te ha asignado el ticket "${existing.title}"`,
+      ticketId: id,
+      userId: body.assignedToId,
+    });
+  }
+
+  // Notify ticket creator on status change
   if (body.status && body.status !== existing.status) {
+    await notificationRepository.create({
+      type: "status_change",
+      title: "Estado actualizado",
+      message: `Tu ticket "${existing.title}" cambió a ${body.status}`,
+      ticketId: id,
+      userId: existing.createdById,
+    });
     await webhookService.emit("ticket.status_changed", id, {
       oldStatus: existing.status,
       newStatus: body.status,

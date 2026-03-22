@@ -38,8 +38,9 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  isActive?: boolean;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export interface AiResult {
@@ -144,6 +145,27 @@ export interface TicketFilters {
   search?: string;
   page?: number;
   limit?: number;
+}
+
+export interface Comment {
+  id: string;
+  content: string;
+  ticketId: string;
+  userId: string;
+  user: { id: string; name: string; email: string; role: UserRole };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  ticketId: string | null;
+  userId: string;
+  read: boolean;
+  createdAt: string;
 }
 
 export interface TicketEvent {

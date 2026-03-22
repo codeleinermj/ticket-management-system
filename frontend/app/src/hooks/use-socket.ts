@@ -28,12 +28,15 @@ export function useSocketConnection() {
             queryKey: ["tickets", event.ticketId],
           });
           queryClient.invalidateQueries({ queryKey: ["tickets"] });
+          queryClient.invalidateQueries({ queryKey: ["comments", event.ticketId] });
+          queryClient.invalidateQueries({ queryKey: ["notifications"] });
           break;
         case "ticket.classified":
           queryClient.invalidateQueries({
             queryKey: ["tickets", event.ticketId],
           });
           queryClient.invalidateQueries({ queryKey: ["tickets"] });
+          queryClient.invalidateQueries({ queryKey: ["notifications"] });
           toast.success("La IA ha clasificado un ticket", {
             description: `Categoria: ${event.data.category}, Prioridad: ${event.data.priority}`,
           });

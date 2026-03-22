@@ -1,7 +1,9 @@
 import type {
   ApiResponse,
+  Comment,
   CreateTicketInput,
   LoginInput,
+  Notification,
   PaginatedResponse,
   RegisterInput,
   Ticket,
@@ -131,6 +133,74 @@ class ApiClient {
     return this.request<ApiResponse<Ticket>>(`/api/tickets/${ticketId}/ai/correct`, {
       method: "POST",
       body: JSON.stringify(corrections),
+    });
+  }
+
+  // Comments
+  async getComments(ticketId: string) {
+    return this.request<ApiResponse<Comment[]>>(`/api/tickets/${ticketId}/comments`);
+  }
+
+  async addComment(ticketId: string, content: string) {
+    return this.request<ApiResponse<Comment>>(`/api/tickets/${ticketId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  async deleteComment(ticketId: string, commentId: string) {
+    return this.request<ApiResponse<null>>(`/api/tickets/${ticketId}/comments/${commentId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Users
+  async getAgents() {
+    return this.request<ApiResponse<{ id: string; name: string; email: string; role: string }[]>>("/api/users/agents");
+  }
+
+  async getUsers(params: { page?: number; limit?: number; role?: string; search?: string } = {}) {
+    const p = new URLSearchParams();
+    if (params.page) p.set("page", String(params.page));
+    if (params.limit) p.set("limit", String(params.limit));
+    if (params.role) p.set("role", params.role);
+    if (params.search) p.set("search", params.search);
+    const query = p.toString();
+    return this.request<ApiResponse<PaginatedResponse<User>>>(`/api/users${query ? `?${query}` : ""}`);
+  }
+
+  async updateUserRole(userId: string, role: string) {
+    return this.request<ApiResponse<User>>(`/api/users/${userId}/role`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  async toggleUserActive(userId: string, isActive: boolean) {
+    return this.request<ApiResponse<User>>(`/api/users/${userId}/active`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive }),
+    });
+  }
+
+  // Notifications
+  async getNotifications(params: { limit?: number; unreadOnly?: boolean } = {}) {
+    const p = new URLSearchParams();
+    if (params.limit) p.set("limit", String(params.limit));
+    if (params.unreadOnly) p.set("unreadOnly", "true");
+    const query = p.toString();
+    return this.request<ApiResponse<{ notifications: Notification[]; unreadCount: number }>>(`/api/notifications${query ? `?${query}` : ""}`);
+  }
+
+  async markNotificationRead(id: string) {
+    return this.request<ApiResponse<null>>(`/api/notifications/${id}/read`, {
+      method: "PATCH",
+    });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request<ApiResponse<null>>("/api/notifications/read-all", {
+      method: "POST",
     });
   }
 }

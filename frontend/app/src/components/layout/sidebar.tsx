@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Ticket,
-  Settings,
+  Users,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +22,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useState } from "react";
+
+import { UserRole } from "@/types";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -104,6 +106,39 @@ export function Sidebar() {
 
           return link;
         })}
+
+        {user?.role === UserRole.ADMIN && (
+          <>
+            <Separator className="my-2" />
+            {(() => {
+              const adminActive = pathname.startsWith("/dashboard/admin");
+              const adminLink = (
+                <Link
+                  href="/dashboard/admin/users"
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    adminActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  <Users className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>Usuarios</span>}
+                </Link>
+              );
+
+              if (collapsed) {
+                return (
+                  <Tooltip>
+                    <TooltipTrigger>{adminLink}</TooltipTrigger>
+                    <TooltipContent side="right">Usuarios</TooltipContent>
+                  </Tooltip>
+                );
+              }
+              return adminLink;
+            })()}
+          </>
+        )}
       </nav>
 
       <Separator />

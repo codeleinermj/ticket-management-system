@@ -116,6 +116,58 @@ ticketRoutes.post("/:id/ai/correct", roleGuard("AGENT", "ADMIN"), async (c) => {
   return c.json(await res.json(), res.status as 200);
 });
 
+// Get comments for a ticket
+ticketRoutes.get("/:id/comments", async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/${id}/comments`, {
+    headers: {
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+    },
+  });
+
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Add comment to a ticket
+ticketRoutes.post("/:id/comments", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/${id}/comments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+      "x-user-name": user.email,
+    },
+    body: JSON.stringify(body),
+  });
+
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Delete comment
+ticketRoutes.delete("/:id/comments/:commentId", async (c) => {
+  const id = c.req.param("id");
+  const commentId = c.req.param("commentId");
+  const user = c.get("user");
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/${id}/comments/${commentId}`, {
+    method: "DELETE",
+    headers: {
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+    },
+  });
+
+  return c.json(await res.json(), res.status as 200);
+});
+
 // Delete ticket (admin only)
 ticketRoutes.delete("/:id", roleGuard("ADMIN"), async (c) => {
   const id = c.req.param("id");

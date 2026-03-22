@@ -50,8 +50,7 @@ Construir una plataforma de gestión de tickets que integre clasificación autom
 **Fuera de alcance (Fase 1):**
 - Notificaciones por email (infraestructura de MailDev lista, integración pendiente)
 - SLA tracking y métricas de tiempo de resolución
-- Asignación automática de tickets a agentes
-- Chat en vivo entre agente y usuario
+- Asignación automática de tickets a agentes (round-robin)
 - E2E tests con Playwright
 - Integración CI/CD
 
@@ -65,8 +64,9 @@ Construir una plataforma de gestión de tickets que integre clasificación autom
 |---|---|
 | Crear ticket | El usuario envía título + descripción. El sistema persiste el ticket y emite un evento a Redis. |
 | Listar tickets | Paginación server-side con filtros por estado, prioridad, categoría y búsqueda por texto. Los usuarios solo ven sus propios tickets; agentes y admins ven todos. |
-| Detalle de ticket | Vista completa con historial de auditoría, sugerencia de IA, y datos del creador/asignado. |
+| Detalle de ticket | Vista completa con historial de auditoría, sugerencia de IA, conversación de comentarios, y datos del creador/asignado. |
 | Actualizar ticket | Cambio de estado, prioridad, categoría, asignación. Cada cambio genera un audit log y emite evento por WebSocket. |
+| Asignar ticket | Los agentes y administradores pueden asignar un ticket a cualquier agente/admin desde un dropdown en el detalle del ticket. La asignación genera una notificación automática al agente asignado. |
 | Eliminar ticket | Solo ADMIN. Elimina en cascada los audit logs asociados. |
 
 **Ciclo de vida del ticket:**
@@ -134,8 +134,12 @@ El API Gateway mantiene un servidor Socket.IO que:
 | Ver todos los tickets | No | Si | Si |
 | Actualizar título/descripción (propios) | Si | Si | Si |
 | Actualizar todos los campos (cualquier ticket) | No | Si | Si |
+| Asignar ticket a agente | No | Si | Si |
+| Comentar en ticket propio | Si | Si | Si |
+| Comentar en cualquier ticket | No | Si | Si |
 | Aceptar/corregir clasificación IA | No | Si | Si |
 | Eliminar ticket | No | No | Si |
+| Gestionar usuarios (roles, activar/desactivar) | No | No | Si |
 
 ### 3.5 Audit Log
 
@@ -144,6 +148,66 @@ Cada operación sobre un ticket genera un registro inmutable:
 - `field` — Campo modificado.
 - `oldValue` / `newValue` — Valores anterior y nuevo.
 - `userId` — Quién realizó la acción (`null` para operaciones del sistema/IA).
+
+### 3.6 Comentarios y Respuestas
+
+Sistema de conversación dentro de cada ticket que permite la comunicación entre agentes y clientes.
+
+| Funcionalidad | Descripción |
+|---|---|
+| Agregar comentario | Cualquier usuario involucrado puede escribir un comentario en el ticket. Agentes/admins pueden comentar en cualquier ticket; usuarios solo en los suyos. |
+| Ver conversación | Lista cronológica de todos los comentarios con avatar, nombre, rol (Agente/Cliente), y timestamp. |
+| Eliminar comentario | El autor del comentario o un ADMIN puede eliminarlo. |
+| Notificaciones automáticas | Al comentar, se genera una notificación para el creador del ticket (si no es el autor del comentario) y para el agente asignado (si existe y no es el autor). |
+
+**Endpoints:**
+- `GET /api/tickets/:id/comments` — Lista comentarios del ticket.
+- `POST /api/tickets/:id/comments` — Agrega un comentario (body: `{ content: string }`).
+- `DELETE /api/tickets/:id/comments/:commentId` — Elimina un comentario.
+
+**Componente frontend:** `<TicketComments>` integrado en la vista de detalle del ticket, con textarea que envía con Enter (Shift+Enter para nueva línea).
+
+### 3.7 Notificaciones
+
+Sistema de notificaciones persistentes que alerta a los usuarios sobre eventos relevantes en sus tickets.
+
+| Evento | Notificación generada | Destinatario |
+|---|---|---|
+| Nuevo comentario | "X comentó en el ticket Y" | Creador del ticket y agente asignado (si no son el autor del comentario) |
+| Ticket asignado | "Se te ha asignado el ticket Y" | Agente asignado |
+| Cambio de estado | "Tu ticket Y cambió a ESTADO" | Creador del ticket |
+
+**Endpoints:**
+- `GET /api/notifications` — Lista notificaciones del usuario autenticado (params: `limit`, `unreadOnly`).
+- `PATCH /api/notifications/:id/read` — Marca una notificación como leída.
+- `POST /api/notifications/read-all` — Marca todas las notificaciones como leídas.
+
+**Componente frontend:** `<NotificationDropdown>` en el header:
+- Icono de campana con badge numérico de no leídas.
+- Dropdown con lista de notificaciones, indicador visual de no leída (punto azul).
+- Clic en notificación → navega al ticket correspondiente y marca como leída.
+- Botón "Marcar todas como leídas".
+- Polling automático cada 30 segundos + invalidación en tiempo real por eventos WebSocket.
+
+### 3.8 Panel de Administración de Usuarios
+
+Panel exclusivo para administradores que permite gestionar los usuarios del sistema.
+
+| Funcionalidad | Descripción |
+|---|---|
+| Listar usuarios | Tabla paginada con nombre, email, rol, estado (activo/inactivo), y fecha de registro. |
+| Buscar usuarios | Campo de búsqueda por nombre o email. |
+| Filtrar por rol | Selector para filtrar por ADMIN, AGENT, o USER. |
+| Cambiar rol | Dropdown para cambiar el rol de un usuario (no se puede cambiar el propio). |
+| Activar/desactivar | Botón para activar o desactivar una cuenta de usuario (no se puede desactivar la propia). |
+
+**Endpoints:**
+- `GET /api/users` — Lista todos los usuarios (admin only, params: `page`, `limit`, `role`, `search`).
+- `GET /api/users/agents` — Lista agentes y admins activos (agent/admin, para el dropdown de asignación).
+- `PATCH /api/users/:id/role` — Cambia el rol de un usuario (admin only, body: `{ role: string }`).
+- `PATCH /api/users/:id/active` — Activa/desactiva un usuario (admin only, body: `{ isActive: boolean }`).
+
+**Ruta frontend:** `/dashboard/admin/users` — visible solo para usuarios con rol ADMIN (link "Usuarios" en el sidebar).
 
 ---
 
@@ -197,8 +261,8 @@ Cada operación sobre un ticket genera un registro inmutable:
 ### 4.3 Modelo de Datos
 
 **User**
-- `id` (UUID), `email` (unique), `password` (hash), `name`, `role` (ADMIN/AGENT/USER)
-- Relaciones: tickets creados, tickets asignados, audit logs
+- `id` (UUID), `email` (unique), `password` (hash), `name`, `role` (ADMIN/AGENT/USER), `isActive` (boolean, default true)
+- Relaciones: tickets creados, tickets asignados, audit logs, comentarios, notificaciones
 
 **Ticket**
 - `id` (UUID), `title`, `description`, `status`, `priority?` (nullable — asignado por IA), `category?` (nullable — asignado por IA), `aiResponse?`, `aiStatus` (PENDING/CLASSIFIED/FAILED), `confidence?`
@@ -216,13 +280,23 @@ Cada operación sobre un ticket genera un registro inmutable:
 - FK: `ticketId` (cascade delete), `userId?` (nullable — null para acciones del sistema/IA)
 - Indices en: `ticketId`, `userId`
 
+**Comment**
+- `id` (UUID), `content`, `createdAt`, `updatedAt`
+- FK: `ticketId` (cascade delete), `userId`
+- Indices en: `ticketId`, `userId`
+
+**Notification**
+- `id` (UUID), `type` (comment/assignment/status_change), `title`, `message`, `ticketId?` (nullable), `read` (boolean, default false), `createdAt`
+- FK: `userId`
+- Indices en: `userId`, `[userId, read]` (compuesto para consultas de no leídas)
+
 ### 4.4 Comunicación entre Servicios
 
 | Origen | Destino | Mecanismo | Propósito |
 |---|---|---|---|
-| Frontend | API Gateway | HTTP + Cookie auth | Requests de usuario |
+| Frontend | API Gateway | HTTP + Cookie auth | Requests de usuario (tickets, comentarios, notificaciones, usuarios) |
 | Frontend | API Gateway | Socket.IO | Eventos en tiempo real |
-| API Gateway | Ticket Service | HTTP (proxy) | CRUD de tickets |
+| API Gateway | Ticket Service | HTTP (proxy) | CRUD de tickets, comentarios, notificaciones, gestión de usuarios |
 | Ticket Service | Redis | Pub (`ticket-events`) | Notificar nuevo ticket |
 | API Gateway | Redis | Sub (`ticket-events`) | Broadcast a clientes WS |
 | AI Worker | Redis | Sub (`ticket-events`) | Recibir tickets para clasificar |
@@ -283,7 +357,28 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 5. Aplica el borrador de respuesta o lo edita, cambia estado a `IN_PROGRESS`.
 6. Resuelve y cierra el ticket.
 
-**Flujo 3 — Fallback de IA**
+**Flujo 3 — Conversación en ticket (Agente responde al cliente)**
+1. Cliente crea un ticket y queda en estado OPEN.
+2. Agente abre el detalle del ticket → ve la sección "Conversación".
+3. Escribe un comentario con la respuesta al cliente → el comentario aparece con badge "Agente".
+4. El sistema genera una notificación automática para el creador del ticket.
+5. El cliente abre su ticket → ve el comentario del agente en la conversación.
+6. El cliente responde con otro comentario → notificación generada para el agente asignado.
+
+**Flujo 4 — Asignación de ticket (Agente/Admin)**
+1. Agente o admin abre el detalle de un ticket.
+2. En el sidebar "Detalles", usa el dropdown "Asignado a" para seleccionar un agente.
+3. El ticket se actualiza y se genera una notificación para el agente asignado.
+4. El cambio queda registrado en el audit log.
+
+**Flujo 5 — Gestión de usuarios (Admin)**
+1. Admin navega a "Usuarios" en el sidebar.
+2. Ve la tabla con todos los usuarios del sistema.
+3. Puede buscar por nombre/email, filtrar por rol.
+4. Cambia el rol de un usuario (ej: USER → AGENT) usando el selector de rol.
+5. Desactiva una cuenta de usuario presionando el botón "Activo" → cambia a "Inactivo".
+
+**Flujo 6 — Fallback de IA**
 1. Ticket creado normalmente.
 2. La API de IA falla (timeout, error de red, rate limit, etc.).
 3. El AI Worker reintenta con backoff exponencial (3 intentos: 1s, 4s, 16s).
@@ -299,7 +394,8 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 | `/register` | Formulario de registro | Público |
 | `/dashboard` | Vista general con estadísticas y tickets recientes | Autenticado |
 | `/dashboard/tickets` | Tabla de tickets con filtros y paginación | Autenticado |
-| `/dashboard/tickets/[id]` | Detalle de ticket con audit log y sugerencia IA | Autenticado |
+| `/dashboard/tickets/[id]` | Detalle de ticket con audit log, sugerencia IA, conversación de comentarios, y asignación | Autenticado |
+| `/dashboard/admin/users` | Panel de administración de usuarios (tabla, roles, activar/desactivar) | ADMIN |
 
 ### 5.3 Componentes Clave del Dashboard
 
@@ -307,6 +403,10 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 - **Ticket Table**: Tabla paginada con columnas de título, estado (badge color), prioridad (badge), categoría, fecha, asignado.
 - **Ticket Filters**: Selectores de estado, prioridad, categoría + campo de búsqueda.
 - **AI Suggestion**: Panel con tres estados: spinner "Clasificando con IA..." (PENDING), tarjeta de sugerencia con badge de confianza + botones "Aceptar"/"Corregir" (CLASSIFIED), o tarjeta de error "Revisión manual requerida" (FAILED).
+- **Ticket Comments**: Sección de conversación con lista de comentarios (avatar, nombre, rol, timestamp), textarea para agregar comentarios (Enter para enviar, Shift+Enter para nueva línea), y opción de eliminar comentarios propios.
+- **Assignment Dropdown**: Selector en el sidebar del ticket que muestra todos los agentes/admins activos. Solo visible para agentes y administradores.
+- **Notification Dropdown**: Campana en el header con badge de conteo de no leídas, dropdown con lista de notificaciones, navegación al ticket al hacer clic, y botón "Marcar todas como leídas".
+- **Admin Users Table**: Tabla paginada con búsqueda, filtro por rol, selectores de rol por usuario, y botones de activar/desactivar.
 - **Audit Log**: Timeline cronológica de todos los cambios del ticket.
 - **Create Ticket Dialog**: Modal con título y descripción obligatorios; prioridad y categoría opcionales con placeholder "Automático (IA)" y hint "Deja en blanco para clasificación automática por IA".
 - **Priority/Status Badges**: Badges con colores semánticos según nivel.
@@ -409,6 +509,34 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 - [x] Reemplazo de `console.log/error` por logger estructurado en todos los servicios
 - [x] Health checks mejorados: ticket-service verifica DB + Redis; api-gateway verifica conectividad con ticket-service
 
+### Fase 1.6 — Funcionalidades de Comunicación y Gestión
+
+**Asignación de tickets a agentes:**
+- [x] Endpoint `GET /api/users/agents` para listar agentes/admins activos
+- [x] Dropdown de asignación en el detalle del ticket (solo visible para agentes/admins)
+- [x] Notificación automática al agente asignado
+
+**Sistema de comentarios/respuestas:**
+- [x] Modelo `Comment` en Prisma con relaciones a Ticket y User
+- [x] Endpoints CRUD: `GET/POST /api/tickets/:id/comments`, `DELETE /api/tickets/:id/comments/:commentId`
+- [x] Componente `<TicketComments>` con lista cronológica, avatares, roles (Agente/Cliente), y textarea
+- [x] Notificaciones automáticas al creador del ticket y agente asignado al comentar
+- [x] Permisos: usuarios solo comentan en sus propios tickets; agentes/admins en cualquiera
+
+**Sistema de notificaciones:**
+- [x] Modelo `Notification` en Prisma con tipos: `comment`, `assignment`, `status_change`
+- [x] Endpoints: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all`
+- [x] Componente `<NotificationDropdown>` en el header con badge de no leídas
+- [x] Polling automático cada 30s + invalidación por eventos WebSocket
+- [x] Clic en notificación navega al ticket correspondiente
+
+**Panel de administración de usuarios:**
+- [x] Endpoints: `GET /api/users`, `PATCH /api/users/:id/role`, `PATCH /api/users/:id/active`
+- [x] Campo `isActive` en modelo User para activar/desactivar cuentas
+- [x] Página `/dashboard/admin/users` con tabla paginada, búsqueda, filtro por rol
+- [x] Selectores de rol y botones de activar/desactivar por usuario
+- [x] Link "Usuarios" en sidebar visible solo para ADMIN
+
 ### Fase 2 — Mejoras de Producto
 
 - [ ] Notificaciones por email (infraestructura MailDev ya disponible)
@@ -427,7 +555,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 
 ### Fase 4 — Funcionalidades Avanzadas
 
-- [ ] Chat en vivo entre agente y usuario
+- [ ] Chat en vivo con WebSockets (conversación bidireccional instantánea, complementario al sistema de comentarios)
 - [ ] Base de conocimiento — respuestas frecuentes que la IA puede referenciar
 - [ ] Multi-tenancy — soporte para múltiples organizaciones
 - [ ] Integración con Slack/Teams para notificaciones

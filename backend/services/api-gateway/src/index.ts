@@ -6,6 +6,8 @@ import { rateLimiter } from "./middleware/rate-limiter";
 import { zodErrorHandler } from "./middleware/zod-error-handler";
 import { ticketRoutes } from "./routes/tickets";
 import { authRoutes } from "./routes/auth";
+import { userRoutes } from "./routes/users";
+import { notificationRoutes } from "./routes/notifications";
 import { swaggerUI } from "@hono/swagger-ui";
 import { openApiSpec } from "./openapi";
 import { config } from "./config";
@@ -65,6 +67,8 @@ app.get("/openapi.json", (c) => c.json(openApiSpec));
 // Routes
 app.route("/api/auth", authRoutes);
 app.route("/api/tickets", ticketRoutes);
+app.route("/api/users", userRoutes);
+app.route("/api/notifications", notificationRoutes);
 
 // 404
 app.notFound((c) => {
