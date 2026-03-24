@@ -9,6 +9,5 @@ export default function TicketDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-
-  return <TicketDetail ticketId={id} />;
+  return <TicketDetail ticketId={id} basePath="/dashboard" />;
 }

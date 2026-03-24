@@ -49,6 +49,9 @@ model User {
   name           String
   role           UserRole @default(USER)
   isActive       Boolean  @default(true)
+  emailVerified  Boolean  @default(false)
+  verificationToken   String?
+  verificationExpires DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   refreshToken   String?
@@ -58,6 +61,8 @@ model User {
   auditLogs      AuditLog[]
   comments       Comment[]
   notifications  Notification[]
+  passwordResets PasswordReset[]
+  attachments    Attachment[]
 
   @@map("users")
 }
@@ -79,18 +84,25 @@ model Ticket {
   assignedToId String?
   assignedTo   User?          @relation("AssignedTickets", fields: [assignedToId], references: [id])
 
+  firstResponseAt DateTime?
+
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   auditLogs   AuditLog[]
   aiResults   AiResult[]
   comments    Comment[]
+  attachments Attachment[]
 
   @@index([status])
   @@index([priority])
   @@index([createdById])
   @@index([assignedToId])
   @@index([aiStatus])
+  @@index([createdAt])
+  @@index([confidence])
+  @@index([aiStatus, confidence])
+  @@index([assignedToId, status])
   @@map("tickets")
 }
 
@@ -159,4 +171,54 @@ model Notification {
   @@index([userId])
   @@index([userId, read])
   @@map("notifications")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  tokenHash String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model Attachment {
+  id           String   @id @default(uuid())
+  filename     String
+  storagePath  String
+  mimeType     String
+  size         Int
+  ticketId     String
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("attachments")
+}
+
+model Outbox {
+  id        String   @id @default(uuid())
+  event     String
+  payload   Json
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([published, createdAt])
+  @@map("outbox")
+}
+
+model SlaConfig {
+  id                 String         @id @default(uuid())
+  priority           TicketPriority @unique
+  maxResponseMinutes Int
+  updatedAt          DateTime       @updatedAt
+
+  @@map("sla_configs")
 }

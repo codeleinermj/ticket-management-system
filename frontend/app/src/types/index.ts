@@ -39,6 +39,7 @@ export interface User {
   name: string;
   role: UserRole;
   isActive?: boolean;
+  emailVerified?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -65,6 +66,7 @@ export interface Ticket {
   aiResponse: string | null;
   aiStatus: AiStatus;
   confidence: number | null;
+  firstResponseAt: string | null;
   createdBy: User;
   assignedTo: User | null;
   createdById: string;
@@ -145,6 +147,15 @@ export interface TicketFilters {
   search?: string;
   page?: number;
   limit?: number;
+  assignedTo?: string;
+  unassigned?: boolean;
+  aiStatus?: AiStatus;
+  confidenceMin?: number;
+  confidenceMax?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
 }
 
 export interface Comment {
@@ -173,4 +184,33 @@ export interface TicketEvent {
   ticketId: string;
   data: Record<string, unknown>;
   timestamp: string;
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  storagePath: string;
+  mimeType: string;
+  size: number;
+  ticketId: string;
+  uploadedById: string;
+  uploadedBy: { id: string; name: string };
+  createdAt: string;
+}
+
+export interface SlaConfig {
+  id: string;
+  priority: TicketPriority;
+  maxResponseMinutes: number;
+  updatedAt: string;
+}
+
+export interface BulkActionInput {
+  ticketIds: string[];
+  action: "update_status" | "assign" | "update_priority" | "delete";
+  data?: {
+    status?: TicketStatus;
+    assignedToId?: string;
+    priority?: TicketPriority;
+  };
 }

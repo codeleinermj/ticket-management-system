@@ -18,22 +18,31 @@ import {
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
 } from "@/hooks/use-notifications";
+import { useAuthStore } from "@/stores/auth";
+import { getRoleBasePath } from "@/lib/role-utils";
+import { UserRole } from "@/types";
 
 export function NotificationDropdown() {
   const router = useRouter();
   const { data } = useNotifications();
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
+  const user = useAuthStore((s) => s.user);
 
   const notifications = data?.data?.notifications || [];
   const unreadCount = data?.data?.unreadCount || 0;
+
+  const basePath = user ? getRoleBasePath(user.role) : "/dashboard";
 
   const handleClick = (notification: (typeof notifications)[0]) => {
     if (!notification.read) {
       markRead.mutate(notification.id);
     }
     if (notification.ticketId) {
-      router.push(`/dashboard/tickets/${notification.ticketId}`);
+      const ticketPath = user?.role === UserRole.USER
+        ? `${basePath}/tickets/${notification.ticketId}`
+        : `${basePath}/tickets/${notification.ticketId}`;
+      router.push(ticketPath);
     }
   };
 

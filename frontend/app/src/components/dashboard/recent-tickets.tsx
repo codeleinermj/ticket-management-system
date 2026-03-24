@@ -7,7 +7,11 @@ import { PriorityBadge } from "@/components/tickets/priority-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export function RecentTickets() {
+interface RecentTicketsProps {
+  basePath?: string;
+}
+
+export function RecentTickets({ basePath = "/dashboard" }: RecentTicketsProps) {
   const { data, isLoading } = useTickets();
 
   if (isLoading) {
@@ -40,7 +44,7 @@ export function RecentTickets() {
           {tickets.map((ticket) => (
             <Link
               key={ticket.id}
-              href={`/dashboard/tickets/${ticket.id}`}
+              href={`${basePath}/tickets/${ticket.id}`}
               className="flex items-center justify-between rounded-md p-2 transition-colors hover:bg-muted/50"
             >
               <div className="space-y-1">

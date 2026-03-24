@@ -91,6 +91,66 @@ export class UserRepository {
       select: { id: true, email: true, name: true, role: true, isActive: true, createdAt: true },
     });
   }
+
+  async updateName(id: string, name: string) {
+    return prisma.user.update({
+      where: { id },
+      data: { name },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+  }
+
+  async findByIdWithPassword(id: string) {
+    return prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, name: true, role: true, password: true, createdAt: true },
+    });
+  }
+
+  async updatePassword(id: string, hashedPassword: string) {
+    return prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword, refreshToken: null },
+    });
+  }
+
+  async setVerificationToken(id: string, tokenHash: string, expires: Date) {
+    return prisma.user.update({
+      where: { id },
+      data: { verificationToken: tokenHash, verificationExpires: expires },
+    });
+  }
+
+  async verifyEmail(id: string) {
+    return prisma.user.update({
+      where: { id },
+      data: { emailVerified: true, verificationToken: null, verificationExpires: null },
+    });
+  }
+
+  async findByVerificationToken(tokenHash: string) {
+    return prisma.user.findFirst({
+      where: {
+        verificationToken: tokenHash,
+        verificationExpires: { gt: new Date() },
+      },
+      select: { id: true, email: true, name: true, role: true, emailVerified: true },
+    });
+  }
+
+  async countActiveAdmins() {
+    return prisma.user.count({ where: { role: "ADMIN", isActive: true } });
+  }
+
+  async findByIdFull(id: string) {
+    return prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true, email: true, name: true, role: true, isActive: true,
+        emailVerified: true, createdAt: true,
+      },
+    });
+  }
 }
 
 export const userRepository = new UserRepository();

@@ -6,10 +6,10 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Ticket,
-  Users,
   LogOut,
   ChevronLeft,
   ChevronRight,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -23,11 +23,10 @@ import {
 } from "@/components/ui/tooltip";
 import { useState } from "react";
 
-import { UserRole } from "@/types";
-
 const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, exact: true },
   { name: "Tickets", href: "/dashboard/tickets", icon: Ticket },
+  { name: "Mi Perfil", href: "/dashboard/profile", icon: User },
 ];
 
 export function Sidebar() {
@@ -75,9 +74,9 @@ export function Sidebar() {
 
       <nav className="flex-1 space-y-1 p-2">
         {navigation.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          const isActive = item.exact
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
 
           const link = (
             <Link
@@ -106,39 +105,6 @@ export function Sidebar() {
 
           return link;
         })}
-
-        {user?.role === UserRole.ADMIN && (
-          <>
-            <Separator className="my-2" />
-            {(() => {
-              const adminActive = pathname.startsWith("/dashboard/admin");
-              const adminLink = (
-                <Link
-                  href="/dashboard/admin/users"
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                    adminActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <Users className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span>Usuarios</span>}
-                </Link>
-              );
-
-              if (collapsed) {
-                return (
-                  <Tooltip>
-                    <TooltipTrigger>{adminLink}</TooltipTrigger>
-                    <TooltipContent side="right">Usuarios</TooltipContent>
-                  </Tooltip>
-                );
-              }
-              return adminLink;
-            })()}
-          </>
-        )}
       </nav>
 
       <Separator />
@@ -157,7 +123,7 @@ export function Sidebar() {
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium">{user?.name}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {user?.role}
+                Agente
               </p>
             </div>
           )}

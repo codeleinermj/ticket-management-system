@@ -42,20 +42,61 @@ export async function processTicket(
   data: TicketData,
   classifier: AIClassifier,
   publisher: Redis,
+  confidenceThreshold: number = 0.6,
 ) {
   try {
+    // Check if already classified (guard against duplicate processing)
+    const current = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { aiStatus: true },
+    });
+    if (current?.aiStatus === "CLASSIFIED") {
+      logger.info("Ticket already classified, skipping", { ticketId });
+      return;
+    }
+
     const classification = await classifyWithRetry(classifier, data);
 
-    await prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        category: classification.category as any,
-        priority: classification.priority as any,
-        aiResponse: classification.suggestedResponse,
-        aiStatus: "CLASSIFIED",
+    const belowThreshold = classification.confidence < confidenceThreshold;
+
+    if (belowThreshold) {
+      // Low confidence: save AI result for agent review but don't auto-apply
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data: {
+          aiResponse: classification.suggestedResponse,
+          aiStatus: "PENDING",
+          confidence: classification.confidence,
+          status: "PENDING_MANUAL_REVIEW",
+        },
+      });
+
+      logger.info("Low confidence classification — pending manual review", {
+        ticketId,
         confidence: classification.confidence,
-      },
-    });
+        threshold: confidenceThreshold,
+      });
+    } else {
+      // High confidence: auto-apply category/priority
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data: {
+          category: classification.category as any,
+          priority: classification.priority as any,
+          aiResponse: classification.suggestedResponse,
+          aiStatus: "CLASSIFIED",
+          confidence: classification.confidence,
+        },
+      });
+
+      logger.info("Ticket classified", {
+        ticketId,
+        category: classification.category,
+        priority: classification.priority,
+        provider: classifier.name,
+        confidence: classification.confidence,
+      });
+    }
 
     await prisma.aiResult.create({
       data: {
@@ -70,7 +111,7 @@ export async function processTicket(
 
     await prisma.auditLog.create({
       data: {
-        action: "AI_CLASSIFICATION",
+        action: belowThreshold ? "AI_LOW_CONFIDENCE" : "AI_CLASSIFICATION",
         ticketId,
         userId: null,
         field: "category",
@@ -82,7 +123,7 @@ export async function processTicket(
     await publisher.publish(
       "ticket-events",
       JSON.stringify({
-        event: "ticket.classified",
+        event: belowThreshold ? "ticket.low_confidence" : "ticket.classified",
         ticketId,
         data: {
           category: classification.category,
@@ -90,18 +131,11 @@ export async function processTicket(
           aiResponse: classification.suggestedResponse,
           confidence: classification.confidence,
           provider: classifier.name,
+          belowThreshold,
         },
         timestamp: new Date().toISOString(),
       }),
     );
-
-    logger.info("Ticket classified", {
-      ticketId,
-      category: classification.category,
-      priority: classification.priority,
-      provider: classifier.name,
-      confidence: classification.confidence,
-    });
   } catch (err) {
     logger.error("Failed to process ticket", {
       ticketId,
@@ -109,6 +143,16 @@ export async function processTicket(
     });
 
     try {
+      // Only mark as FAILED if not already classified by another worker
+      const current = await prisma.ticket.findUnique({
+        where: { id: ticketId },
+        select: { aiStatus: true },
+      });
+      if (current?.aiStatus === "CLASSIFIED") {
+        logger.info("Ticket already classified by another worker, skipping failure", { ticketId });
+        return;
+      }
+
       await prisma.ticket.update({
         where: { id: ticketId },
         data: {

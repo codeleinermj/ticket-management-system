@@ -6,6 +6,7 @@ import { api, ApiRequestError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import type { LoginInput, RegisterInput } from "@/types";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
+import { getRoleBasePath } from "@/lib/role-utils";
 
 export function useUser() {
   const setUser = useAuthStore((s) => s.setUser);
@@ -30,10 +31,11 @@ export function useLogin() {
   return useMutation({
     mutationFn: (data: LoginInput) => api.login(data),
     onSuccess: (res) => {
-      setUser(res.data.user);
+      const user = res.data.user;
+      setUser(user);
       connectSocket();
       queryClient.invalidateQueries({ queryKey: ["user"] });
-      router.push("/dashboard");
+      router.push(getRoleBasePath(user.role));
     },
   });
 }
@@ -50,10 +52,12 @@ export function useRegister() {
       return api.login({ email: data.email, password: data.password });
     },
     onSuccess: (res) => {
-      setUser(res.data.user);
+      const user = res.data.user;
+      setUser(user);
       connectSocket();
       queryClient.invalidateQueries({ queryKey: ["user"] });
-      router.push("/dashboard");
+      // Registration always creates USER, redirect to /portal
+      router.push("/portal");
     },
   });
 }

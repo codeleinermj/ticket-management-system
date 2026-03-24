@@ -47,7 +47,7 @@ subscriber.on("message", async (_channel, message) => {
 
     if (event.event === "ticket.created") {
       logger.info("Processing new ticket", { ticketId: event.ticketId });
-      await processTicket(event.ticketId, event.data, classifier, publisher);
+      await processTicket(event.ticketId, event.data, classifier, publisher, config.AI_CONFIDENCE_THRESHOLD);
     }
   } catch (err) {
     logger.error("Error processing message", { error: (err as Error).message });

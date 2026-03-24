@@ -207,7 +207,7 @@ Panel exclusivo para administradores que permite gestionar los usuarios del sist
 - `PATCH /api/users/:id/role` — Cambia el rol de un usuario (admin only, body: `{ role: string }`).
 - `PATCH /api/users/:id/active` — Activa/desactiva un usuario (admin only, body: `{ isActive: boolean }`).
 
-**Ruta frontend:** `/dashboard/admin/users` — visible solo para usuarios con rol ADMIN (link "Usuarios" en el sidebar).
+**Ruta frontend:** `/admin/users` — accesible solo para usuarios con rol ADMIN.
 
 ---
 
@@ -343,19 +343,22 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 
 ### 5.1 Flujos Principales
 
-**Flujo 1 — Creación de ticket (Usuario)**
-1. Usuario hace login → redirigido al dashboard.
-2. Clic en "Crear Ticket" → modal con título y descripción (prioridad y categoría opcionales — si se dejan en blanco, la IA las asigna automáticamente).
-3. Submit → ticket aparece en la tabla con estado `OPEN` y prioridad/categoría como "Pendiente".
-4. En segundos, la IA clasifica el ticket → la fila se actualiza en tiempo real vía WebSocket con categoría, prioridad y badge de confianza.
+**Flujo 1 — Creación de ticket (Cliente / USER)**
+1. Usuario hace login → redirigido a `/portal` (vista simplificada).
+2. Clic en "Nuevo Ticket" → modal con título y descripción solamente (sin prioridad ni categoría — la IA las asigna).
+3. Submit → ticket aparece en la lista con estado `OPEN`.
+4. En segundos, la IA clasifica el ticket → el estado se actualiza en tiempo real vía WebSocket.
+5. El cliente no ve la clasificación IA, prioridad ni categoría — solo el estado del ticket y la conversación.
 
-**Flujo 2 — Gestión de ticket (Agente)**
-1. Agente ve el dashboard con todos los tickets.
-2. Filtra por prioridad `CRITICAL` y estado `OPEN`.
-3. Abre un ticket → ve la sugerencia de IA con badge de confianza (verde ≥0.8, amarillo ≥0.5, rojo <0.5).
-4. Acepta la clasificación de IA o la corrige (categoría/prioridad) → feedback registrado en `ai_results` y audit log.
-5. Aplica el borrador de respuesta o lo edita, cambia estado a `IN_PROGRESS`.
-6. Resuelve y cierra el ticket.
+**Flujo 2 — Gestión de ticket (Agente / AGENT)**
+1. Agente hace login → redirigido a `/dashboard` (vista completa con sidebar).
+2. Ve su dashboard con stats: "Mis Asignados", "Sin Asignar", "IA Fallida".
+3. Filtra por prioridad `CRITICAL` y estado `OPEN`.
+4. Abre un ticket → ve la sugerencia de IA con badge de confianza (verde ≥0.8, amarillo ≥0.5, rojo <0.5).
+5. Acepta la clasificación de IA o la corrige (categoría/prioridad) → feedback registrado en `ai_results` y audit log.
+6. "Tomar ticket" para auto-asignarse, o asignar a otro agente desde el dropdown.
+7. Aplica el borrador de respuesta o lo edita, cambia estado a `IN_PROGRESS`.
+8. Resuelve y cierra el ticket.
 
 **Flujo 3 — Conversación en ticket (Agente responde al cliente)**
 1. Cliente crea un ticket y queda en estado OPEN.
@@ -372,11 +375,13 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 4. El cambio queda registrado en el audit log.
 
 **Flujo 5 — Gestión de usuarios (Admin)**
-1. Admin navega a "Usuarios" en el sidebar.
-2. Ve la tabla con todos los usuarios del sistema.
-3. Puede buscar por nombre/email, filtrar por rol.
-4. Cambia el rol de un usuario (ej: USER → AGENT) usando el selector de rol.
-5. Desactiva una cuenta de usuario presionando el botón "Activo" → cambia a "Inactivo".
+1. Admin hace login → redirigido a `/admin` (panel de administración con sidebar extendido).
+2. Navega a "Usuarios" en el sidebar.
+3. Ve la tabla con todos los usuarios del sistema.
+4. Puede buscar por nombre/email, filtrar por rol.
+5. Cambia el rol de un usuario (ej: USER → AGENT) usando el selector de rol.
+6. Desactiva una cuenta de usuario presionando el botón "Activo" → cambia a "Inactivo".
+7. Cuando se cambia un rol, la sesión actual del usuario sigue activa con el rol viejo. Al refrescar token o re-loguearse, obtiene el nuevo rol y es redirigido a la vista correcta.
 
 **Flujo 6 — Fallback de IA**
 1. Ticket creado normalmente.
@@ -386,29 +391,78 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 5. El frontend recibe el evento `ticket.ai_failed` vía WebSocket y muestra notificación de error.
 6. Agente lo ve destacado en el dashboard y lo clasifica manualmente.
 
-### 5.2 Estructura de Páginas
+### 5.2 Estructura de Páginas (Vistas por Rol)
+
+El sistema implementa tres experiencias distintas según el rol del usuario. El registro siempre crea un USER. Solo un ADMIN puede cambiar roles.
+
+**Rutas públicas:**
 
 | Ruta | Componente | Acceso |
 |---|---|---|
 | `/login` | Formulario de login | Público |
 | `/register` | Formulario de registro | Público |
-| `/dashboard` | Vista general con estadísticas y tickets recientes | Autenticado |
-| `/dashboard/tickets` | Tabla de tickets con filtros y paginación | Autenticado |
-| `/dashboard/tickets/[id]` | Detalle de ticket con audit log, sugerencia IA, conversación de comentarios, y asignación | Autenticado |
-| `/dashboard/admin/users` | Panel de administración de usuarios (tabla, roles, activar/desactivar) | ADMIN |
 
-### 5.3 Componentes Clave del Dashboard
+**Portal — Vista Cliente (USER):**
 
+| Ruta | Componente | Descripción |
+|---|---|---|
+| `/portal` | Lista de tickets del usuario | Interfaz simple: lista de tickets propios, filtro por estado, búsqueda por título, botón "Nuevo Ticket" |
+| `/portal/tickets/[id]` | Detalle simplificado | Título, descripción, estado, fecha, conversación. Sin prioridad, categoría, IA, audit log, asignación |
+| `/portal/profile` | Perfil del usuario | Nombre, email, rol, fecha de registro |
+
+**Dashboard — Vista Agente (AGENT):**
+
+| Ruta | Componente | Descripción |
+|---|---|---|
+| `/dashboard` | Dashboard con stats + tickets | Stats: Mis Asignados, Sin Asignar, IA Fallida. Tickets recientes + tickets sin asignar |
+| `/dashboard/tickets` | Tabla completa de tickets | Columnas: Título, Estado, Prioridad, Categoría, Asignado a, IA, Creado por, Fecha |
+| `/dashboard/tickets/[id]` | Detalle completo | Descripción, sugerencia IA, comentarios, audit log, sidebar con estado/prioridad/categoría/asignación. Botón "Tomar ticket" |
+| `/dashboard/profile` | Perfil del agente | Nombre, email, rol |
+
+**Admin — Panel de Administración (ADMIN):**
+
+| Ruta | Componente | Descripción |
+|---|---|---|
+| `/admin` | Dashboard administrativo | Todo lo del agente + métricas: Usuarios Totales, Sin Asignar, IA Fallida |
+| `/admin/tickets` | Gestión de tickets | Tabla completa con acciones de eliminación |
+| `/admin/tickets/[id]` | Detalle completo | Igual que agente + botón Eliminar |
+| `/admin/users` | Gestión de usuarios | Tabla paginada, búsqueda, filtro por rol, cambiar rol, activar/desactivar |
+| `/admin/settings` | Configuración del sistema | Proveedor IA activo, umbral de confianza, reintentos, SLA por prioridad, categorías |
+| `/admin/profile` | Perfil del admin | Nombre, email, rol |
+
+**Middleware de protección por rol:**
+
+```
+middleware.ts:
+  1. Si no autenticado → /login
+  2. Si autenticado (JWT decodificado para obtener rol):
+     - USER accede a /dashboard o /admin → Redirect a /portal
+     - AGENT accede a /portal o /admin   → Redirect a /dashboard
+     - ADMIN accede a /portal            → Redirect a /admin
+  3. ADMIN puede acceder a /dashboard (hereda permisos de AGENT)
+```
+
+### 5.3 Componentes Clave
+
+**Layouts por rol:**
+- **PortalShell**: Header simple con logo, enlace "Mis Tickets", y dropdown de perfil con avatar. Sin sidebar. Contenido centrado en `max-w-5xl`.
+- **DashboardShell**: Sidebar colapsable + header con notificaciones. Sidebar muestra: Dashboard, Tickets, Mi Perfil.
+- **AdminShell**: Sidebar colapsable con label "Admin Panel" + header con notificaciones. Sidebar muestra: Dashboard, Tickets, Usuarios, Configuración, Mi Perfil.
+
+**Componentes compartidos:**
 - **Stats Cards**: Contadores de tickets por estado (open, in progress, resolved, etc.).
-- **Ticket Table**: Tabla paginada con columnas de título, estado (badge color), prioridad (badge), categoría, fecha, asignado.
+- **Ticket Table**: Tabla paginada con columnas de título, estado (badge color), prioridad (badge), categoría, asignado a, estado IA (badge), creado por, fecha. Acepta `basePath` para links correctos por rol.
+- **Ticket Detail**: Vista completa con descripción, sugerencia IA, comentarios, audit log, sidebar de detalles. Incluye botón "Tomar ticket" para auto-asignación. Acepta `basePath`.
 - **Ticket Filters**: Selectores de estado, prioridad, categoría + campo de búsqueda.
+- **Recent Tickets**: Últimos 5 tickets con links role-aware. Acepta `basePath`.
 - **AI Suggestion**: Panel con tres estados: spinner "Clasificando con IA..." (PENDING), tarjeta de sugerencia con badge de confianza + botones "Aceptar"/"Corregir" (CLASSIFIED), o tarjeta de error "Revisión manual requerida" (FAILED).
 - **Ticket Comments**: Sección de conversación con lista de comentarios (avatar, nombre, rol, timestamp), textarea para agregar comentarios (Enter para enviar, Shift+Enter para nueva línea), y opción de eliminar comentarios propios.
 - **Assignment Dropdown**: Selector en el sidebar del ticket que muestra todos los agentes/admins activos. Solo visible para agentes y administradores.
-- **Notification Dropdown**: Campana en el header con badge de conteo de no leídas, dropdown con lista de notificaciones, navegación al ticket al hacer clic, y botón "Marcar todas como leídas".
+- **Notification Dropdown**: Campana en el header con badge de conteo de no leídas, dropdown con lista de notificaciones. Navegación al ticket usa ruta correcta según rol del usuario.
+- **Profile Page**: Componente reutilizable con avatar, nombre, email, rol, y fecha de registro. Usado en `/portal/profile`, `/dashboard/profile`, y `/admin/profile`.
 - **Admin Users Table**: Tabla paginada con búsqueda, filtro por rol, selectores de rol por usuario, y botones de activar/desactivar.
 - **Audit Log**: Timeline cronológica de todos los cambios del ticket.
-- **Create Ticket Dialog**: Modal con título y descripción obligatorios; prioridad y categoría opcionales con placeholder "Automático (IA)" y hint "Deja en blanco para clasificación automática por IA".
+- **Create Ticket Dialog**: Modal con título y descripción obligatorios; prioridad y categoría opcionales con placeholder "Automático (IA)" y hint "Deja en blanco para clasificación automática por IA". En portal, solo muestra título y descripción.
 - **Priority/Status Badges**: Badges con colores semánticos según nivel.
 
 ---
@@ -443,9 +497,14 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 
 ### 6.5 Protección del Frontend
 
-- Next.js middleware redirige rutas protegidas a `/login` si no hay sesión.
+- Next.js middleware decodifica el JWT del `accessToken` cookie para obtener el rol del usuario.
+- Rutas protegidas redirigen a `/login` si no hay sesión.
+- **Protección por rol**: USER solo accede a `/portal`, AGENT solo a `/dashboard`, ADMIN a `/admin` y `/dashboard`.
+- Redireccionamiento automático: si un usuario accede a una vista que no le corresponde, es redirigido a su vista correcta.
 - Cookies `accessToken`/`refreshToken` verificadas antes del render.
 - Todos los requests incluyen `credentials: "include"` para enviar cookies automáticamente.
+- Después de login, el usuario es redirigido a la vista correspondiente a su rol (USER→`/portal`, AGENT→`/dashboard`, ADMIN→`/admin`).
+- Después de registro, siempre redirige a `/portal` (rol USER por defecto).
 
 ### 6.6 Base de Datos
 
@@ -533,9 +592,44 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 **Panel de administración de usuarios:**
 - [x] Endpoints: `GET /api/users`, `PATCH /api/users/:id/role`, `PATCH /api/users/:id/active`
 - [x] Campo `isActive` en modelo User para activar/desactivar cuentas
-- [x] Página `/dashboard/admin/users` con tabla paginada, búsqueda, filtro por rol
+- [x] Página de gestión de usuarios con tabla paginada, búsqueda, filtro por rol
 - [x] Selectores de rol y botones de activar/desactivar por usuario
-- [x] Link "Usuarios" en sidebar visible solo para ADMIN
+
+### Fase 1.7 — Vistas por Rol (RFC #004)
+
+**Estructura de rutas por rol:**
+- [x] Tres route groups separados: `(portal)` para USER, `(dashboard)` para AGENT, `(admin)` para ADMIN
+- [x] Middleware con protección por rol: decodifica JWT para obtener rol y redirige automáticamente
+- [x] Login redirige según rol: USER→`/portal`, AGENT→`/dashboard`, ADMIN→`/admin`
+- [x] Registro siempre crea USER y redirige a `/portal`
+
+**Portal — Vista Cliente (USER):**
+- [x] Layout simple `PortalShell`: header con logo, "Mis Tickets", dropdown de perfil (sin sidebar)
+- [x] `/portal` — Lista de tickets propios con filtros por estado, búsqueda, y botón "Nuevo Ticket" (solo título + descripción)
+- [x] `/portal/tickets/[id]` — Detalle simplificado: título, descripción, estado, fecha, conversación (sin prioridad, categoría, IA, audit log)
+- [x] `/portal/profile` — Perfil básico del usuario
+
+**Dashboard — Vista Agente (AGENT):**
+- [x] Sidebar actualizado: Dashboard, Tickets, Mi Perfil (sin sección admin)
+- [x] Dashboard mejorado con stats: "Mis Asignados", "Sin Asignar", "IA Fallida" + sección "Tickets Sin Asignar"
+- [x] Tabla de tickets mejorada: columnas "Asignado a" y "IA" (badge con estado de clasificación)
+- [x] Botón "Tomar ticket" en detalle para auto-asignación
+- [x] `/dashboard/profile` — Perfil del agente
+
+**Admin — Panel de Administración (ADMIN):**
+- [x] Layout `AdminShell` con sidebar extendido: Dashboard, Tickets, Usuarios, Configuración, Mi Perfil
+- [x] `/admin` — Dashboard administrativo con métricas globales: Usuarios Totales, Sin Asignar, IA Fallida
+- [x] `/admin/tickets` — Gestión completa de tickets con eliminación
+- [x] `/admin/tickets/[id]` — Detalle completo con todas las acciones
+- [x] `/admin/users` — Gestión de usuarios (movido desde `/dashboard/admin/users`)
+- [x] `/admin/settings` — Configuración del sistema: proveedor IA, umbral de confianza, SLA, categorías
+- [x] `/admin/profile` — Perfil del administrador
+
+**Componentes actualizados:**
+- [x] `TicketTable`, `TicketDetail`, `RecentTickets` aceptan prop `basePath` para generar links correctos por rol
+- [x] `NotificationDropdown` redirige al ticket con la ruta correcta según el rol del usuario
+- [x] Componente `ProfilePage` reutilizable para las tres vistas de perfil
+- [x] Utilidad `getRoleBasePath(role)` centralizada en `lib/role-utils.ts`
 
 ### Fase 2 — Mejoras de Producto
 

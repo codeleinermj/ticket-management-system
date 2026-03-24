@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useUsers, useUpdateUserRole, useToggleUserActive } from "@/hooks/use-users";
 import { useAuthStore } from "@/stores/auth";
-import { UserRole } from "@/types";
 import {
   Card,
   CardContent,
@@ -32,7 +31,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 const roleLabels: Record<string, string> = {
   ADMIN: "Administrador",
@@ -47,7 +45,6 @@ const roleColors: Record<string, string> = {
 };
 
 export default function AdminUsersPage() {
-  const router = useRouter();
   const currentUser = useAuthStore((s) => s.user);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -56,12 +53,6 @@ export default function AdminUsersPage() {
   const { data, isLoading } = useUsers({ page, search: search || undefined, role: roleFilter || undefined });
   const updateRole = useUpdateUserRole();
   const toggleActive = useToggleUserActive();
-
-  // Redirect non-admins
-  if (currentUser && currentUser.role !== UserRole.ADMIN) {
-    router.push("/dashboard");
-    return null;
-  }
 
   const users = data?.data?.data || [];
   const meta = data?.data?.meta;
@@ -114,7 +105,7 @@ export default function AdminUsersPage() {
                 className="pl-9"
               />
             </div>
-            <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v === "ALL" ? "" : v); setPage(1); }}>
+            <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v === "ALL" ? "" : v ?? ""); setPage(1); }}>
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Todos los roles" />
               </SelectTrigger>
@@ -161,7 +152,7 @@ export default function AdminUsersPage() {
                           <TableCell>
                             <Select
                               value={u.role}
-                              onValueChange={(role) => handleRoleChange(u.id, role)}
+                              onValueChange={(role) => handleRoleChange(u.id, role ?? "")}
                               disabled={u.id === currentUser?.id}
                             >
                               <SelectTrigger className="w-[140px]">

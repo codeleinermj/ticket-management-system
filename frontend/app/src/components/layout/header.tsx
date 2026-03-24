@@ -6,7 +6,7 @@ import { NotificationDropdown } from "./notification-dropdown";
 const routeTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/dashboard/tickets": "Tickets",
-  "/dashboard/admin/users": "Administrar Usuarios",
+  "/dashboard/profile": "Mi Perfil",
 };
 
 export function Header() {

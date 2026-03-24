@@ -3,11 +3,14 @@ import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { rateLimiter } from "./middleware/rate-limiter";
+import { userRateLimiter } from "./middleware/user-rate-limiter";
 import { zodErrorHandler } from "./middleware/zod-error-handler";
 import { ticketRoutes } from "./routes/tickets";
 import { authRoutes } from "./routes/auth";
 import { userRoutes } from "./routes/users";
 import { notificationRoutes } from "./routes/notifications";
+import { slaRoutes } from "./routes/sla";
+import { attachmentRoutes } from "./routes/attachments";
 import { swaggerUI } from "@hono/swagger-ui";
 import { openApiSpec } from "./openapi";
 import { config } from "./config";
@@ -20,7 +23,18 @@ const app = new Hono();
 
 // Global middleware
 app.use("*", honoLogger());
-app.use("*", secureHeaders());
+app.use("*", secureHeaders({
+  contentSecurityPolicy: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", "data:", "blob:"],
+    connectSrc: ["'self'", "ws://localhost:*", "wss://*"],
+    fontSrc: ["'self'"],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+  },
+}));
 app.use(
   "*",
   cors({
@@ -35,9 +49,16 @@ app.use(
   })
 );
 
-// Rate limiting
+// Rate limiting (IP-based global)
 app.use("*", rateLimiter({ windowMs: config.RATE_LIMIT_WINDOW_MS, max: config.RATE_LIMIT_MAX }));
 app.use("/api/auth/*", rateLimiter({ windowMs: 60_000, max: 20 }));
+
+// Per-user rate limiting (Redis-based, applied after auth)
+app.use("/api/tickets", userRateLimiter({ windowSeconds: 60, max: 20, keyPrefix: "create-ticket" }));
+app.use("/api/tickets/*/comments", userRateLimiter({ windowSeconds: 60, max: 30, keyPrefix: "comment" }));
+app.use("/api/tickets/*/attachments", userRateLimiter({ windowSeconds: 60, max: 10, keyPrefix: "attachment" }));
+app.use("/api/auth/forgot-password", rateLimiter({ windowMs: 60_000, max: 10 }));
+app.use("/api/auth/resend-verification", userRateLimiter({ windowSeconds: 3600, max: 3, keyPrefix: "resend-verify" }));
 
 // Error handler
 app.onError(zodErrorHandler);
@@ -69,6 +90,8 @@ app.route("/api/auth", authRoutes);
 app.route("/api/tickets", ticketRoutes);
 app.route("/api/users", userRoutes);
 app.route("/api/notifications", notificationRoutes);
+app.route("/api/sla", slaRoutes);
+app.route("/api/attachments", attachmentRoutes);
 
 // 404
 app.notFound((c) => {

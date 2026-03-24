@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { userRepository } from "../repositories/user.repository";
-import { NotFoundError } from "@repo/shared";
+import { NotFoundError, ForbiddenError } from "@repo/shared";
 
 export const userRoutes = new Hono();
 
@@ -29,6 +29,14 @@ userRoutes.patch("/:id/role", async (c) => {
   const existing = await userRepository.findById(id);
   if (!existing) throw new NotFoundError("User not found");
 
+  // Protect last admin
+  if (existing.role === "ADMIN" && role !== "ADMIN") {
+    const adminCount = await userRepository.countActiveAdmins();
+    if (adminCount <= 1) {
+      throw new ForbiddenError("No se puede modificar al unico administrador del sistema");
+    }
+  }
+
   const user = await userRepository.updateRole(id, role);
   return c.json({ success: true, data: user });
 });
@@ -40,6 +48,14 @@ userRoutes.patch("/:id/active", async (c) => {
 
   const existing = await userRepository.findById(id);
   if (!existing) throw new NotFoundError("User not found");
+
+  // Protect last admin
+  if (existing.role === "ADMIN" && !isActive) {
+    const adminCount = await userRepository.countActiveAdmins();
+    if (adminCount <= 1) {
+      throw new ForbiddenError("No se puede desactivar al unico administrador del sistema");
+    }
+  }
 
   const user = await userRepository.toggleActive(id, isActive);
   return c.json({ success: true, data: user });

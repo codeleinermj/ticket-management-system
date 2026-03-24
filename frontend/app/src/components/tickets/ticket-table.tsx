@@ -1,21 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { useTickets } from "@/hooks/use-tickets";
+import { useTickets, useBulkAction } from "@/hooks/use-tickets";
+import { useAgents } from "@/hooks/use-users";
 import { useFiltersStore } from "@/stores/filters";
+import { useAuthStore } from "@/stores/auth";
 import { StatusBadge } from "./status-badge";
 import { PriorityBadge } from "./priority-badge";
 import { TicketTableSkeleton } from "./ticket-table-skeleton";
+import { SlaIndicator } from "./sla-indicator";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
+import { AiStatus, TicketPriority, TicketStatus, UserRole } from "@/types";
+import { toast } from "sonner";
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("es-ES", {
@@ -33,9 +39,29 @@ const categoryLabels: Record<string, string> = {
   OTHER: "Otro",
 };
 
-export function TicketTable() {
+const aiStatusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  PENDING: { label: "Pendiente", variant: "outline" },
+  CLASSIFIED: { label: "Clasificado", variant: "default" },
+  FAILED: { label: "Fallido", variant: "destructive" },
+};
+
+interface TicketTableProps {
+  basePath?: string;
+}
+
+export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
   const { data, isLoading, isError } = useTickets();
-  const { page, setPage } = useFiltersStore();
+  const { page, setPage, selectedTickets, toggleTicketSelection, selectAllTickets, clearSelectedTickets } = useFiltersStore();
+  const user = useAuthStore((s) => s.user);
+  const isAgent = user?.role === UserRole.AGENT || user?.role === UserRole.ADMIN;
+  const isAdmin = user?.role === UserRole.ADMIN;
+
+  const bulkAction = useBulkAction();
+  const { data: agentsData } = useAgents();
+  const agents = agentsData?.data || [];
+
+  const [bulkActionType, setBulkActionType] = useState<string>("");
+  const [bulkValue, setBulkValue] = useState<string>("");
 
   if (isLoading) return <TicketTableSkeleton />;
 
@@ -60,48 +86,198 @@ export function TicketTable() {
     );
   }
 
+  const allSelected = tickets.every((t) => selectedTickets.has(t.id));
+  const someSelected = selectedTickets.size > 0;
+
+  const handleSelectAll = () => {
+    if (allSelected) clearSelectedTickets();
+    else selectAllTickets(tickets.map((t) => t.id));
+  };
+
+  const handleBulkExecute = () => {
+    if (!bulkActionType || selectedTickets.size === 0) return;
+
+    const ticketIds = Array.from(selectedTickets);
+    let actionData: any = {};
+
+    switch (bulkActionType) {
+      case "update_status":
+        if (!bulkValue) return toast.error("Selecciona un estado");
+        actionData = { status: bulkValue };
+        break;
+      case "assign":
+        if (!bulkValue) return toast.error("Selecciona un agente");
+        actionData = { assignedToId: bulkValue };
+        break;
+      case "update_priority":
+        if (!bulkValue) return toast.error("Selecciona una prioridad");
+        actionData = { priority: bulkValue };
+        break;
+      case "delete":
+        if (!confirm(`Eliminar ${ticketIds.length} tickets?`)) return;
+        break;
+    }
+
+    bulkAction.mutate(
+      { ticketIds, action: bulkActionType as any, data: actionData },
+      {
+        onSuccess: (res) => {
+          toast.success(`${res.data.processed} tickets procesados`);
+          clearSelectedTickets();
+          setBulkActionType("");
+          setBulkValue("");
+        },
+        onError: () => toast.error("Error en accion bulk"),
+      }
+    );
+  };
+
   return (
     <div>
+      {isAgent && someSelected && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 p-3">
+          <span className="text-sm font-medium">
+            {selectedTickets.size} ticket{selectedTickets.size > 1 ? "s" : ""} seleccionado{selectedTickets.size > 1 ? "s" : ""}
+          </span>
+
+          <Select value={bulkActionType} onValueChange={(v) => { setBulkActionType(v || ""); setBulkValue(""); }}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Accion..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="update_status">Cambiar estado</SelectItem>
+              <SelectItem value="assign">Asignar a agente</SelectItem>
+              <SelectItem value="update_priority">Cambiar prioridad</SelectItem>
+              {isAdmin && <SelectItem value="delete">Eliminar</SelectItem>}
+            </SelectContent>
+          </Select>
+
+          {bulkActionType === "update_status" && (
+            <Select value={bulkValue} onValueChange={(v) => setBulkValue(v || "")}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TicketStatus.OPEN}>Abierto</SelectItem>
+                <SelectItem value={TicketStatus.IN_PROGRESS}>En Progreso</SelectItem>
+                <SelectItem value={TicketStatus.RESOLVED}>Resuelto</SelectItem>
+                <SelectItem value={TicketStatus.CLOSED}>Cerrado</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
+          {bulkActionType === "assign" && (
+            <Select value={bulkValue} onValueChange={(v) => setBulkValue(v || "")}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Agente" />
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {bulkActionType === "update_priority" && (
+            <Select value={bulkValue} onValueChange={(v) => setBulkValue(v || "")}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Prioridad" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TicketPriority.LOW}>Baja</SelectItem>
+                <SelectItem value={TicketPriority.MEDIUM}>Media</SelectItem>
+                <SelectItem value={TicketPriority.HIGH}>Alta</SelectItem>
+                <SelectItem value={TicketPriority.CRITICAL}>Critica</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
+          <Button
+            size="sm"
+            onClick={handleBulkExecute}
+            disabled={bulkAction.isPending || !bulkActionType}
+          >
+            {bulkAction.isPending ? "Procesando..." : "Aplicar"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { clearSelectedTickets(); setBulkActionType(""); }}>
+            Cancelar
+          </Button>
+        </div>
+      )}
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              {isAgent && (
+                <TableHead className="w-10">
+                  <Checkbox checked={allSelected} onCheckedChange={handleSelectAll} />
+                </TableHead>
+              )}
               <TableHead>Titulo</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Prioridad</TableHead>
               <TableHead>Categoria</TableHead>
+              <TableHead>Asignado a</TableHead>
+              {isAgent && <TableHead>SLA</TableHead>}
+              <TableHead>IA</TableHead>
               <TableHead>Creado por</TableHead>
               <TableHead>Fecha</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tickets.map((ticket) => (
-              <TableRow key={ticket.id} className="cursor-pointer hover:bg-muted/50">
-                <TableCell>
-                  <Link
-                    href={`/dashboard/tickets/${ticket.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {ticket.title}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={ticket.status} />
-                </TableCell>
-                <TableCell>
-                  <PriorityBadge priority={ticket.priority} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {ticket.category ? (categoryLabels[ticket.category] || ticket.category) : "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {ticket.createdBy?.name || "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatDate(ticket.createdAt)}
-                </TableCell>
-              </TableRow>
-            ))}
+            {tickets.map((ticket) => {
+              const aiCfg = aiStatusConfig[ticket.aiStatus] || aiStatusConfig.PENDING;
+              return (
+                <TableRow key={ticket.id} className="cursor-pointer hover:bg-muted/50">
+                  {isAgent && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedTickets.has(ticket.id)}
+                        onCheckedChange={() => toggleTicketSelection(ticket.id)}
+                      />
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Link
+                      href={`${basePath}/tickets/${ticket.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {ticket.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={ticket.status} />
+                  </TableCell>
+                  <TableCell>
+                    <PriorityBadge priority={ticket.priority} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {ticket.category ? (categoryLabels[ticket.category] || ticket.category) : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {ticket.assignedTo?.name || "Sin asignar"}
+                  </TableCell>
+                  {isAgent && (
+                    <TableCell>
+                      <SlaIndicator ticket={ticket} />
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Badge variant={aiCfg.variant} className="text-xs">
+                      {aiCfg.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {ticket.createdBy?.name || "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(ticket.createdAt)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

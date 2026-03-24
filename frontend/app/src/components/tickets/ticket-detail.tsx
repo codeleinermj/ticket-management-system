@@ -9,6 +9,8 @@ import { PriorityBadge } from "./priority-badge";
 import { AiSuggestion } from "./ai-suggestion";
 import { TicketAuditLog } from "./ticket-audit-log";
 import { TicketComments } from "./ticket-comments";
+import { TicketAttachments } from "./ticket-attachments";
+import { SlaDetailWidget } from "./sla-detail-widget";
 import {
   Card,
   CardContent,
@@ -25,13 +27,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TicketStatus, UserRole } from "@/types";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2, HandMetal } from "lucide-react";
 import { toast } from "sonner";
 
-export function TicketDetail({ ticketId }: { ticketId: string }) {
+interface TicketDetailProps {
+  ticketId: string;
+  basePath?: string;
+}
+
+export function TicketDetail({ ticketId, basePath = "/dashboard" }: TicketDetailProps) {
   const router = useRouter();
   const { data, isLoading, isError } = useTicket(ticketId);
   const updateTicket = useUpdateTicket();
@@ -87,7 +93,7 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
     deleteTicket.mutate(ticketId, {
       onSuccess: () => {
         toast.success("Ticket eliminado");
-        router.push("/dashboard/tickets");
+        router.push(`${basePath}/tickets`);
       },
       onError: () => toast.error("Error al eliminar"),
     });
@@ -99,6 +105,17 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
       {
         onSuccess: () => toast.success("Ticket asignado"),
         onError: () => toast.error("Error al asignar"),
+      }
+    );
+  };
+
+  const handleTakeTicket = () => {
+    if (!user) return;
+    updateTicket.mutate(
+      { id: ticketId, data: { assignedToId: user.id } },
+      {
+        onSuccess: () => toast.success("Te has asignado este ticket"),
+        onError: () => toast.error("Error al tomar el ticket"),
       }
     );
   };
@@ -120,17 +137,30 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
             })}
           </p>
         </div>
-        {user?.role === UserRole.ADMIN && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDelete}
-            disabled={deleteTicket.isPending}
-          >
-            <Trash2 className="mr-1 h-4 w-4" />
-            Eliminar
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {isAgent && !ticket.assignedToId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTakeTicket}
+              disabled={updateTicket.isPending}
+            >
+              <HandMetal className="mr-1 h-4 w-4" />
+              Tomar ticket
+            </Button>
+          )}
+          {user?.role === UserRole.ADMIN && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleteTicket.isPending}
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Eliminar
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -157,6 +187,8 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
             isAgent={isAgent}
           />
 
+          <TicketAttachments ticketId={ticketId} />
+
           <TicketComments ticketId={ticketId} />
 
           <Card>
@@ -174,6 +206,9 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
 
         {/* Sidebar */}
         <div className="space-y-4">
+          {isAgent && ticket.priority && (
+            <SlaDetailWidget ticket={ticket} />
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Detalles</CardTitle>
@@ -228,7 +263,7 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
                 {isAgent ? (
                   <Select
                     value={ticket.assignedToId || "unassigned"}
-                    onValueChange={(v) => handleAssign(v === "unassigned" ? "" : v)}
+                    onValueChange={(v) => handleAssign(v === "unassigned" ? "" : v ?? "")}
                   >
                     <SelectTrigger className="w-[160px]">
                       <SelectValue />

@@ -4,6 +4,8 @@ import { auditRepository } from "../repositories/audit.repository";
 import { notificationRepository } from "../repositories/notification.repository";
 import { webhookService } from "../services/webhook.service";
 import { NotFoundError, ForbiddenError } from "@repo/shared";
+import { sanitizeText } from "../lib/sanitize";
+import { prisma } from "../lib/prisma";
 
 export const ticketRoutes = new Hono();
 
@@ -17,9 +19,20 @@ ticketRoutes.get("/", async (c) => {
   const priority = c.req.query("priority");
   const category = c.req.query("category");
   const search = c.req.query("search");
+  const assignedTo = c.req.query("assignedTo");
+  const unassigned = c.req.query("unassigned");
+  const aiStatus = c.req.query("aiStatus");
+  const confidenceMin = c.req.query("confidenceMin");
+  const confidenceMax = c.req.query("confidenceMax");
+  const dateFrom = c.req.query("dateFrom");
+  const dateTo = c.req.query("dateTo");
+  const sortBy = c.req.query("sortBy");
+  const sortOrder = c.req.query("sortOrder");
 
   const result = await ticketRepository.findAll({
     page, limit, userId, role, status, priority, category, search,
+    assignedTo, unassigned, aiStatus, confidenceMin, confidenceMax,
+    dateFrom, dateTo, sortBy, sortOrder,
   });
   return c.json({ success: true, data: result });
 });
@@ -42,27 +55,53 @@ ticketRoutes.get("/:id", async (c) => {
   return c.json({ success: true, data: ticket });
 });
 
-// Create ticket
+// Create ticket (atomic: ticket + audit log + outbox in one transaction)
 ticketRoutes.post("/", async (c) => {
   const body = await c.req.json();
   const userId = c.req.header("x-user-id")!;
 
-  const ticket = await ticketRepository.create({
-    ...body,
-    createdById: userId,
-  });
+  // Sanitize user input
+  if (body.title) body.title = sanitizeText(body.title);
+  if (body.description) body.description = sanitizeText(body.description);
 
-  await auditRepository.log({
-    action: "CREATE",
-    ticketId: ticket.id,
-    userId,
-  });
+  const ticket = await prisma.$transaction(async (tx) => {
+    const created = await tx.ticket.create({
+      data: {
+        title: body.title,
+        description: body.description,
+        priority: (body.priority as any) || undefined,
+        category: body.category as any,
+        createdById: userId,
+      },
+      include: {
+        createdBy: { select: { id: true, name: true, email: true } },
+      },
+    });
 
-  await webhookService.emit("ticket.created", ticket.id, {
-    title: ticket.title,
-    description: ticket.description,
-    category: ticket.category,
-    priority: ticket.priority,
+    await tx.auditLog.create({
+      data: {
+        action: "CREATE",
+        ticketId: created.id,
+        userId,
+      },
+    });
+
+    await tx.outbox.create({
+      data: {
+        event: "ticket.created",
+        payload: {
+          ticketId: created.id,
+          data: {
+            title: created.title,
+            description: created.description,
+            category: created.category,
+            priority: created.priority,
+          },
+        },
+      },
+    });
+
+    return created;
   });
 
   return c.json({ success: true, data: ticket }, 201);
@@ -79,6 +118,10 @@ ticketRoutes.patch("/:id", async (c) => {
   if (!existing) {
     throw new NotFoundError("Ticket not found");
   }
+
+  // Sanitize user input
+  if (body.title) body.title = sanitizeText(body.title);
+  if (body.description) body.description = sanitizeText(body.description);
 
   // USERs can only update their own tickets, and only title/description
   if (role === "USER") {
@@ -128,6 +171,115 @@ ticketRoutes.patch("/:id", async (c) => {
   }
 
   return c.json({ success: true, data: ticket });
+});
+
+// Export tickets
+ticketRoutes.get("/export/csv", async (c) => {
+  const userId = c.req.header("x-user-id")!;
+  const role = c.req.header("x-user-role")!;
+
+  if (role === "USER") {
+    return c.json({ success: false, error: "Solo agentes y administradores pueden exportar" }, 403);
+  }
+
+  const result = await ticketRepository.findAllForExport({
+    userId, role,
+    status: c.req.query("status"),
+    priority: c.req.query("priority"),
+    category: c.req.query("category"),
+    search: c.req.query("search"),
+    assignedTo: c.req.query("assignedTo"),
+    aiStatus: c.req.query("aiStatus"),
+    dateFrom: c.req.query("dateFrom"),
+    dateTo: c.req.query("dateTo"),
+  });
+
+  if (result.error) {
+    return c.json({ success: false, error: result.error }, 400);
+  }
+
+  const headers = ["ID", "Titulo", "Descripcion", "Estado", "Prioridad", "Categoria", "Estado IA", "Confianza IA", "Creado por", "Asignado a", "Fecha creacion", "Fecha actualizacion"];
+  const escape = (val: string) => `"${(val || "").replace(/"/g, '""')}"`;
+
+  const rows = result.data.map((t: any) => [
+    t.id,
+    escape(t.title),
+    escape(t.description),
+    t.status,
+    t.priority || "",
+    t.category || "",
+    t.aiStatus,
+    t.confidence?.toString() || "",
+    t.createdBy?.name || "",
+    t.assignedTo?.name || "",
+    new Date(t.createdAt).toISOString(),
+    new Date(t.updatedAt).toISOString(),
+  ].join(","));
+
+  const csv = [headers.join(","), ...rows].join("\n");
+  c.header("Content-Type", "text/csv; charset=utf-8");
+  c.header("Content-Disposition", 'attachment; filename="tickets.csv"');
+  return c.body(csv);
+});
+
+// Bulk actions
+ticketRoutes.post("/bulk", async (c) => {
+  const userId = c.req.header("x-user-id")!;
+  const role = c.req.header("x-user-role")!;
+
+  if (role === "USER") {
+    return c.json({ success: false, error: "Solo agentes y administradores pueden usar acciones en bulk" }, 403);
+  }
+
+  const { ticketIds, action, data } = await c.req.json();
+
+  if (!ticketIds || ticketIds.length === 0 || ticketIds.length > 50) {
+    return c.json({ success: false, error: "Entre 1 y 50 tickets" }, 400);
+  }
+
+  if (action === "delete" && role !== "ADMIN") {
+    return c.json({ success: false, error: "Solo administradores pueden eliminar en bulk" }, 403);
+  }
+
+  const results: { ticketId: string; status: string; error?: string }[] = [];
+
+  for (const ticketId of ticketIds) {
+    try {
+      const ticket = await ticketRepository.findById(ticketId);
+      if (!ticket) {
+        results.push({ ticketId, status: "error", error: "Not found" });
+        continue;
+      }
+
+      switch (action) {
+        case "update_status":
+          await ticketRepository.update(ticketId, { status: data.status as any });
+          await auditRepository.log({ action: "BULK_STATUS_CHANGE", field: "status", oldValue: ticket.status, newValue: data.status, ticketId, userId });
+          break;
+        case "assign":
+          await ticketRepository.update(ticketId, { assignedToId: data.assignedToId });
+          await auditRepository.log({ action: "BULK_ASSIGN", field: "assignedToId", oldValue: ticket.assignedToId, newValue: data.assignedToId, ticketId, userId });
+          break;
+        case "update_priority":
+          await ticketRepository.update(ticketId, { priority: data.priority as any });
+          await auditRepository.log({ action: "BULK_PRIORITY_CHANGE", field: "priority", oldValue: ticket.priority, newValue: data.priority, ticketId, userId });
+          break;
+        case "delete":
+          await ticketRepository.delete(ticketId);
+          break;
+      }
+
+      await webhookService.emit(`ticket.${action === "delete" ? "deleted" : "updated"}`, ticketId, { bulkAction: action });
+      results.push({ ticketId, status: "ok" });
+    } catch (err: any) {
+      results.push({ ticketId, status: "error", error: err.message });
+    }
+  }
+
+  const processed = results.filter(r => r.status === "ok").length;
+  const failed = results.filter(r => r.status === "error").length;
+
+  return c.json({ success: true, data: { processed, failed, results } });
 });
 
 // Delete ticket

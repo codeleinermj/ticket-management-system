@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { userRepository } from "../repositories/user.repository";
+import { passwordResetRepository } from "../repositories/password-reset.repository";
 import { ConflictError, UnauthorizedError } from "@repo/shared";
 import { config } from "../config";
+import { emailService } from "../services/email.service";
 
 export const authRoutes = new Hono();
 
@@ -24,6 +26,17 @@ authRoutes.post("/register", async (c) => {
     ...body,
     password: hashedPassword,
   });
+
+  // Send verification email
+  try {
+    const verifyToken = crypto.randomUUID();
+    const tokenHash = await hashToken(verifyToken);
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    await userRepository.setVerificationToken(user.id, tokenHash, expires);
+    await emailService.sendVerificationEmail(body.email, body.name, verifyToken);
+  } catch {
+    // Don't fail registration if email fails
+  }
 
   return c.json({ success: true, data: user }, 201);
 });
@@ -57,7 +70,7 @@ authRoutes.post("/login", async (c) => {
   await userRepository.updateRefreshToken(user.id, refreshToken);
 
   // Return user data (without sensitive fields) along with tokens
-  const { password: _, refreshToken: _rt, ...userWithoutPassword } = user;
+  const { password: _, refreshToken: _rt, verificationToken: _vt, verificationExpires: _ve, ...userWithoutPassword } = user;
   return c.json({
     accessToken,
     refreshToken,
@@ -75,7 +88,7 @@ authRoutes.get("/me", async (c) => {
   }
 
   const payload = await verifyJwt(token, config.JWT_SECRET);
-  const user = await userRepository.findById(payload.sub);
+  const user = await userRepository.findByIdFull(payload.sub);
 
   if (!user) {
     throw new UnauthorizedError("User not found");
@@ -120,6 +133,128 @@ authRoutes.post("/refresh", async (c) => {
     throw new UnauthorizedError("Invalid refresh token");
   }
 });
+
+// Update profile (name)
+authRoutes.patch("/profile", async (c) => {
+  const userId = c.req.header("x-user-id")!;
+  const { name } = await c.req.json();
+  const user = await userRepository.updateName(userId, name);
+  return c.json({ success: true, data: user });
+});
+
+// Change password
+authRoutes.patch("/password", async (c) => {
+  const userId = c.req.header("x-user-id")!;
+  const { currentPassword, newPassword } = await c.req.json();
+
+  const user = await userRepository.findByIdWithPassword(userId);
+  if (!user) throw new UnauthorizedError("User not found");
+
+  const valid = await Bun.password.verify(currentPassword, user.password);
+  if (!valid) throw new UnauthorizedError("Current password is incorrect");
+
+  const isSame = await Bun.password.verify(newPassword, user.password);
+  if (isSame) {
+    return c.json({ success: false, error: "New password must be different" }, 400);
+  }
+
+  const hashed = await Bun.password.hash(newPassword, { algorithm: "argon2id", memoryCost: 65536, timeCost: 3 });
+  await userRepository.updatePassword(userId, hashed);
+  return c.json({ success: true, data: { message: "Password updated" } });
+});
+
+// Forgot password
+authRoutes.post("/forgot-password", async (c) => {
+  const { email } = await c.req.json();
+
+  // Always return success to prevent user enumeration
+  const user = await userRepository.findByEmail(email);
+  if (user) {
+    // Rate limit: max 3 per hour
+    const recent = await passwordResetRepository.countRecentByUserId(user.id, 60);
+    if (recent < 3) {
+      const token = crypto.randomUUID();
+      const tokenHash = await hashToken(token);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await passwordResetRepository.create({ tokenHash, userId: user.id, expiresAt });
+
+      try {
+        await emailService.sendPasswordResetEmail(email, user.name, token);
+      } catch {
+        // Silently fail
+      }
+    }
+  }
+
+  return c.json({ success: true, data: { message: "Si el email existe, recibiras un enlace de recuperacion" } });
+});
+
+// Reset password
+authRoutes.post("/reset-password", async (c) => {
+  const { token, newPassword } = await c.req.json();
+
+  const tokenHash = await hashToken(token);
+  const reset = await passwordResetRepository.findValidByTokenHash(tokenHash);
+  if (!reset) {
+    return c.json({ success: false, error: "Token invalido o expirado" }, 400);
+  }
+
+  const hashed = await Bun.password.hash(newPassword, { algorithm: "argon2id", memoryCost: 65536, timeCost: 3 });
+  await userRepository.updatePassword(reset.userId, hashed);
+  await passwordResetRepository.markAsUsed(reset.id);
+
+  return c.json({ success: true, data: { message: "Contrasena actualizada exitosamente" } });
+});
+
+// Verify email
+authRoutes.get("/verify-email", async (c) => {
+  const token = c.req.query("token");
+  if (!token) return c.json({ success: false, error: "Token required" }, 400);
+
+  const tokenHash = await hashToken(token);
+  const user = await userRepository.findByVerificationToken(tokenHash);
+  if (!user) {
+    return c.json({ success: false, error: "Token invalido o expirado" }, 400);
+  }
+
+  await userRepository.verifyEmail(user.id);
+  return c.json({ success: true, data: { message: "Email verificado exitosamente" } });
+});
+
+// Resend verification email
+authRoutes.post("/resend-verification", async (c) => {
+  const userId = c.req.header("x-user-id")!;
+  const user = await userRepository.findByIdFull(userId);
+  if (!user) throw new UnauthorizedError("User not found");
+
+  if (user.emailVerified) {
+    return c.json({ success: false, error: "Email ya esta verificado" }, 400);
+  }
+
+  const fullUser = await userRepository.findByEmail(user.email);
+  if (!fullUser) throw new UnauthorizedError("User not found");
+
+  const verifyToken = crypto.randomUUID();
+  const tokenHash = await hashToken(verifyToken);
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await userRepository.setVerificationToken(user.id, tokenHash, expires);
+
+  try {
+    await emailService.sendVerificationEmail(user.email, user.name, verifyToken);
+  } catch {
+    return c.json({ success: false, error: "Error al enviar correo" }, 500);
+  }
+
+  return c.json({ success: true, data: { message: "Correo de verificacion enviado" } });
+});
+
+// Token hashing helper
+async function hashToken(token: string): Promise<string> {
+  const data = new TextEncoder().encode(token);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
 // JWT helpers using Web Crypto API
 async function signJwt(

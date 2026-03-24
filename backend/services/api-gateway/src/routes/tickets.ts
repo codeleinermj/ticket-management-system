@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { CreateTicketSchema, UpdateTicketSchema, CorrectAiClassificationSchema } from "@repo/shared";
+import { CreateTicketSchema, UpdateTicketSchema, CorrectAiClassificationSchema, BulkActionSchema } from "@repo/shared";
 import { authGuard, roleGuard } from "../middleware/auth";
 import { config } from "../config";
 
@@ -148,6 +148,77 @@ ticketRoutes.post("/:id/comments", async (c) => {
     body: JSON.stringify(body),
   });
 
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Export tickets (agent/admin only)
+ticketRoutes.get("/export/csv", roleGuard("AGENT", "ADMIN"), async (c) => {
+  const user = c.get("user");
+  const queryString = c.req.url.split("?")[1] || "";
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/export/csv?${queryString}`, {
+    headers: {
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+    },
+  });
+
+  if (res.headers.get("content-type")?.includes("text/csv")) {
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header("Content-Disposition", 'attachment; filename="tickets.csv"');
+    return c.body(await res.arrayBuffer());
+  }
+
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Bulk actions (agent/admin only)
+ticketRoutes.post("/bulk", roleGuard("AGENT", "ADMIN"), async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json();
+  const validated = BulkActionSchema.parse(body);
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/bulk`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+    },
+    body: JSON.stringify(validated),
+  });
+
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Get attachments for a ticket
+ticketRoutes.get("/:id/attachments", async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/${id}/attachments`, {
+    headers: {
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+    },
+  });
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Upload attachment
+ticketRoutes.post("/:id/attachments", async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const formData = await c.req.formData();
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/tickets/${id}/attachments`, {
+    method: "POST",
+    headers: {
+      "x-user-id": user.sub,
+      "x-user-role": user.role,
+    },
+    body: formData,
+  });
   return c.json(await res.json(), res.status as 200);
 });
 

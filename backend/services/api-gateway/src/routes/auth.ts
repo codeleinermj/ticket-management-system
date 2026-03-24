@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import { RegisterUserSchema, LoginSchema } from "@repo/shared";
+import {
+  RegisterUserSchema, LoginSchema,
+  UpdateProfileSchema, ChangePasswordSchema,
+  ForgotPasswordSchema, ResetPasswordSchema,
+} from "@repo/shared";
+import { authGuard } from "../middleware/auth";
 import { config } from "../config";
 
 export const authRoutes = new Hono();
@@ -129,4 +134,93 @@ authRoutes.post("/logout", (c) => {
   c.header("Set-Cookie", "accessToken=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0", { append: true });
   c.header("Set-Cookie", "refreshToken=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0", { append: true });
   return c.json({ success: true, data: null });
+});
+
+// Update profile (authenticated)
+authRoutes.patch("/profile", authGuard(), async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json();
+  const validated = UpdateProfileSchema.parse(body);
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/auth/profile`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": user.sub,
+    },
+    body: JSON.stringify(validated),
+  });
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Change password (authenticated)
+authRoutes.patch("/password", authGuard(), async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json();
+  const validated = ChangePasswordSchema.parse(body);
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/auth/password`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": user.sub,
+    },
+    body: JSON.stringify(validated),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    return c.json(err, res.status as 400);
+  }
+
+  // Clear cookies to force re-login
+  c.header("Set-Cookie", "accessToken=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0", { append: true });
+  c.header("Set-Cookie", "refreshToken=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0", { append: true });
+  return c.json(await res.json());
+});
+
+// Forgot password (public)
+authRoutes.post("/forgot-password", async (c) => {
+  const body = await c.req.json();
+  const validated = ForgotPasswordSchema.parse(body);
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(validated),
+  });
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Reset password (public)
+authRoutes.post("/reset-password", async (c) => {
+  const body = await c.req.json();
+  const validated = ResetPasswordSchema.parse(body);
+
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(validated),
+  });
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Verify email (public)
+authRoutes.get("/verify-email", async (c) => {
+  const token = c.req.query("token");
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/auth/verify-email?token=${token}`);
+  return c.json(await res.json(), res.status as 200);
+});
+
+// Resend verification (authenticated)
+authRoutes.post("/resend-verification", authGuard(), async (c) => {
+  const user = c.get("user");
+  const res = await fetch(`${config.TICKET_SERVICE_URL}/auth/resend-verification`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-id": user.sub,
+    },
+  });
+  return c.json(await res.json(), res.status as 200);
 });

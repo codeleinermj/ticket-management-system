@@ -8,6 +8,7 @@ import {
 import { api } from "@/lib/api";
 import { useFiltersStore } from "@/stores/filters";
 import type {
+  BulkActionInput,
   CreateTicketInput,
   Ticket,
   TicketFilters,
@@ -20,11 +21,24 @@ export function useTickets() {
   const category = useFiltersStore((s) => s.category);
   const search = useFiltersStore((s) => s.search);
   const page = useFiltersStore((s) => s.page);
+  const assignedTo = useFiltersStore((s) => s.assignedTo);
+  const unassigned = useFiltersStore((s) => s.unassigned);
+  const aiStatus = useFiltersStore((s) => s.aiStatus);
+  const confidenceMin = useFiltersStore((s) => s.confidenceMin);
+  const confidenceMax = useFiltersStore((s) => s.confidenceMax);
+  const dateFrom = useFiltersStore((s) => s.dateFrom);
+  const dateTo = useFiltersStore((s) => s.dateTo);
+  const sortBy = useFiltersStore((s) => s.sortBy);
+  const sortOrder = useFiltersStore((s) => s.sortOrder);
 
-  const filters: TicketFilters = { status, priority, category, search, page, limit: 20 };
+  const filters: TicketFilters = {
+    status, priority, category, search, page, limit: 20,
+    assignedTo, unassigned, aiStatus, confidenceMin, confidenceMax,
+    dateFrom, dateTo, sortBy, sortOrder,
+  };
 
   return useQuery({
-    queryKey: ["tickets", status, priority, category, search, page],
+    queryKey: ["tickets", filters],
     queryFn: () => api.getTickets(filters),
     staleTime: 30 * 1000,
   });
@@ -114,6 +128,17 @@ export function useCorrectAiClassification() {
     }) => api.correctAiClassification(ticketId, corrections),
     onSettled: (_data, _error, { ticketId }) => {
       queryClient.invalidateQueries({ queryKey: ["tickets", ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    },
+  });
+}
+
+export function useBulkAction() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: BulkActionInput) => api.bulkAction(data),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
     },
   });

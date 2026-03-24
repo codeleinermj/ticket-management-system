@@ -5,6 +5,7 @@ import { userRepository } from "../repositories/user.repository";
 import { notificationRepository } from "../repositories/notification.repository";
 import { webhookService } from "../services/webhook.service";
 import { NotFoundError, ForbiddenError } from "@repo/shared";
+import { sanitizeText } from "../lib/sanitize";
 
 export const commentRoutes = new Hono();
 
@@ -20,7 +21,8 @@ commentRoutes.post("/:ticketId/comments", async (c) => {
   const ticketId = c.req.param("ticketId");
   const userId = c.req.header("x-user-id")!;
   const userRole = c.req.header("x-user-role")!;
-  const { content } = await c.req.json();
+  const body = await c.req.json();
+  const content = sanitizeText(body.content);
 
   const commenter = await userRepository.findById(userId);
   const userName = commenter?.name || "Usuario";
@@ -34,6 +36,11 @@ commentRoutes.post("/:ticketId/comments", async (c) => {
   }
 
   const comment = await commentRepository.create({ content, ticketId, userId });
+
+  // Set firstResponseAt if this is the first agent/admin comment
+  if ((userRole === "AGENT" || userRole === "ADMIN") && !ticket.firstResponseAt) {
+    await ticketRepository.update(ticketId, { firstResponseAt: new Date() } as any);
+  }
 
   // Notify relevant users
   const notifyUserIds = new Set<string>();

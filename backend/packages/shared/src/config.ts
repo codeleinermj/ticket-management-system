@@ -18,6 +18,12 @@ export const GatewayConfigSchema = BaseConfigSchema.extend({
 
 export const TicketServiceConfigSchema = BaseConfigSchema.extend({
   TICKET_SERVICE_PORT: z.coerce.number().default(3001),
+  SMTP_HOST: z.string().default("localhost"),
+  SMTP_PORT: z.coerce.number().default(1025),
+  EMAIL_FROM: z.string().default("soporte@ticketgestion.com"),
+  FRONTEND_URL: z.string().default("http://localhost:5173"),
+  STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
+  STORAGE_PATH: z.string().default("./uploads"),
 });
 
 export const AiWorkerConfigSchema = z.object({
@@ -25,6 +31,7 @@ export const AiWorkerConfigSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   AI_PROVIDER: z.enum(["openai", "gemini", "mock"]).default("mock"),
+  AI_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   GEMINI_API_KEY: z.string().optional(),
