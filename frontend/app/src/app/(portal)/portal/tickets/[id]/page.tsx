@@ -1,8 +1,9 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTicket } from "@/hooks/use-tickets";
+import { setActiveTicketId } from "@/hooks/use-socket";
 import { TicketComments } from "@/components/tickets/ticket-comments";
 import { StatusBadge } from "@/components/tickets/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,11 @@ export default function PortalTicketDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const { data, isLoading, isError } = useTicket(id);
+
+  useEffect(() => {
+    setActiveTicketId(id);
+    return () => setActiveTicketId(null);
+  }, [id]);
 
   if (isLoading) {
     return (

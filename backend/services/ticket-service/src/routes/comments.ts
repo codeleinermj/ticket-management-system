@@ -66,10 +66,13 @@ commentRoutes.post("/:ticketId/comments", async (c) => {
     await notificationRepository.createMany(notifications);
   }
 
-  await webhookService.emit("ticket.updated", ticketId, {
-    type: "comment",
+  await webhookService.emit("comment.created", ticketId, {
     commentId: comment.id,
+    userId,
     userName,
+    userRole,
+    content: content.length > 100 ? content.slice(0, 100) + "..." : content,
+    createdAt: comment.createdAt,
   });
 
   return c.json({ success: true, data: comment }, 201);

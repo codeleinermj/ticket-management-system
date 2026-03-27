@@ -631,6 +631,15 @@ middleware.ts:
 - [x] Componente `ProfilePage` reutilizable para las tres vistas de perfil
 - [x] Utilidad `getRoleBasePath(role)` centralizada en `lib/role-utils.ts`
 
+### Fase 1.8 — Chat en Tiempo Real (RFC #006, Feature #15)
+
+- [x] Evento dedicado `comment.created` en Redis/WebSocket (reemplaza `ticket.updated` genérico)
+- [x] Chat estilo WhatsApp: mensajes propios a la derecha (fondo primary), ajenos a la izquierda
+- [x] Auto-scroll al fondo del chat cuando llega mensaje nuevo
+- [x] Botón flotante "Nuevo mensaje" con animación cuando hay mensajes no vistos
+- [x] Toast de notificación solo si el usuario NO es el autor y NO está viendo el ticket
+- [x] `setActiveTicketId` para rastrear qué ticket está viendo el usuario
+
 ### Fase 2 — Mejoras de Producto
 
 - [ ] Notificaciones por email (infraestructura MailDev ya disponible)

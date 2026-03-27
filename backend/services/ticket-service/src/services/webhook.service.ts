@@ -7,7 +7,8 @@ export type WebhookEvent =
   | "ticket.created"
   | "ticket.updated"
   | "ticket.status_changed"
-  | "ticket.deleted";
+  | "ticket.deleted"
+  | "comment.created";
 
 interface WebhookPayload {
   event: WebhookEvent;

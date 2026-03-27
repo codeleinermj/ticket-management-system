@@ -73,6 +73,7 @@ export interface Ticket {
   assignedToId: string | null;
   auditLogs?: AuditLog[];
   aiResults?: AiResult[];
+  hasNewMessage?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -180,7 +181,7 @@ export interface Notification {
 }
 
 export interface TicketEvent {
-  event: "ticket.created" | "ticket.updated" | "ticket.status_changed" | "ticket.deleted" | "ticket.classified" | "ticket.ai_failed";
+  event: "ticket.created" | "ticket.updated" | "ticket.status_changed" | "ticket.deleted" | "ticket.classified" | "ticket.ai_failed" | "comment.created";
   ticketId: string;
   data: Record<string, unknown>;
   timestamp: string;

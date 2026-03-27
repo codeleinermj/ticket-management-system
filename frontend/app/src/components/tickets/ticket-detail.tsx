@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTicket, useUpdateTicket, useDeleteTicket } from "@/hooks/use-tickets";
+import { setActiveTicketId } from "@/hooks/use-socket";
 import { useAgents } from "@/hooks/use-users";
 import { useAuthStore } from "@/stores/auth";
 import { StatusBadge } from "./status-badge";
@@ -45,6 +47,12 @@ export function TicketDetail({ ticketId, basePath = "/dashboard" }: TicketDetail
   const user = useAuthStore((s) => s.user);
   const isAgent = user?.role === UserRole.AGENT || user?.role === UserRole.ADMIN;
   const { data: agentsData } = useAgents();
+
+  // Track active ticket for conditional toast notifications
+  useEffect(() => {
+    setActiveTicketId(ticketId);
+    return () => setActiveTicketId(null);
+  }, [ticketId]);
 
   if (isLoading) {
     return (

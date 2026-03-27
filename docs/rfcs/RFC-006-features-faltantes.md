@@ -650,15 +650,92 @@ model Ticket {
 | Email verify | GET /api/auth/verify-email | GET |
 | Email verify | POST /api/auth/resend-verification | POST |
 
+## Feature #15: Notificaciones en Tiempo Real en el Chat (tipo WhatsApp)
+
+### Estado actual
+Los comentarios se crean y se notifican via DB (tabla Notification), pero no hay push en tiempo real al chat. El usuario necesita recargar o navegar para ver nuevos mensajes. El evento `ticket.updated` con `type: "comment"` se publica a Redis pero el frontend no lo distingue de otras actualizaciones.
+
+### Diseno
+
+#### Evento dedicado de Redis/WebSocket
+```
+Evento: "comment.created"
+Payload: {
+  event: "comment.created",
+  ticketId: "uuid",
+  data: {
+    commentId: "uuid",
+    userId: "uuid",
+    userName: "Juan Perez",
+    userRole: "AGENT" | "USER" | "ADMIN",
+    content: "Hola, ya revisamos tu caso...",  // primeros 100 chars
+    createdAt: "2026-03-27T14:30:00Z"
+  },
+  timestamp: "2026-03-27T14:30:00Z"
+}
+```
+
+#### Flujo
+```
+1. Agente escribe comentario en ticket
+     |
+2. Backend:
+   -> Crea comentario en DB
+   -> Crea notificacion en DB (ya existe)
+   -> Publica evento "comment.created" a Redis (NUEVO)
+     |
+3. WebSocket server (api-gateway):
+   -> Recibe evento de Redis
+   -> Broadcast a todos los clientes conectados (ya existe)
+     |
+4. Frontend del cliente (si tiene el ticket abierto):
+   -> Recibe "comment.created" via socket
+   -> Invalida query de comentarios -> chat se actualiza automaticamente
+   -> Auto-scroll al nuevo mensaje
+   -> NO muestra toast (ya ve el mensaje en el chat)
+     |
+5. Frontend del cliente (si NO tiene el ticket abierto):
+   -> Recibe "comment.created" via socket
+   -> Invalida query de notificaciones
+   -> Muestra toast: "Juan Perez comento en 'No puedo pagar'"
+   -> Click en toast navega al ticket
+```
+
+#### UI en el chat (TicketComments)
+```
+Cuando llega un mensaje nuevo y el usuario esta en el ticket:
+  - El mensaje aparece automaticamente (query invalidation)
+  - Auto-scroll al fondo del chat
+  - Efecto sutil de entrada (animate-in)
+
+Cuando el usuario NO esta en el fondo del scroll:
+  - Aparece boton flotante: "Nuevo mensaje v" (flecha abajo)
+  - Click en el boton hace scroll al fondo
+```
+
+#### Cambios necesarios
+
+**Backend:**
+- Agregar `"comment.created"` a `WebhookEvent` type
+- En `POST /:ticketId/comments`: publicar `comment.created` en vez de `ticket.updated`
+
+**Frontend:**
+- Agregar `"comment.created"` a `TicketEvent.event` union type
+- En `use-socket.ts`: manejar `comment.created` -> invalidar comments + notifications, toast condicional
+- En `TicketComments`: auto-scroll al fondo cuando llega nuevo comentario, boton "nuevo mensaje"
+
+---
+
 ## Prioridad de Implementacion
 
 | Orden | Feature | Justificacion |
 |-------|---------|--------------|
-| 1 | #12 Perfil + cambio de contrasena | Base para las demas features de auth |
-| 2 | #13 Recuperacion de contrasena | Critico para cualquier app con login |
-| 3 | #14 Verificacion de email | Previene cuentas basura |
-| 4 | #11 SLA tracking | Da valor inmediato al dashboard del agente |
-| 5 | #7 Busqueda avanzada | Mejora la eficiencia del agente |
-| 6 | #8 Adjuntos | Los clientes necesitan enviar screenshots |
-| 7 | #10 Exportar | Util para reportes y auditorias |
-| 8 | #9 Bulk actions | Optimizacion para cuando hay volumen |
+| 1 | #15 Chat en tiempo real | Mejora inmediata en UX, bajo esfuerzo |
+| 2 | #12 Perfil + cambio de contrasena | Base para las demas features de auth |
+| 3 | #13 Recuperacion de contrasena | Critico para cualquier app con login |
+| 4 | #14 Verificacion de email | Previene cuentas basura |
+| 5 | #11 SLA tracking | Da valor inmediato al dashboard del agente |
+| 6 | #7 Busqueda avanzada | Mejora la eficiencia del agente |
+| 7 | #8 Adjuntos | Los clientes necesitan enviar screenshots |
+| 8 | #10 Exportar | Util para reportes y auditorias |
+| 9 | #9 Bulk actions | Optimizacion para cuando hay volumen |
