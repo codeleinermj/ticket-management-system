@@ -19,9 +19,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
-import { AiStatus, TicketPriority, TicketStatus, UserRole } from "@/types";
+import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
+import { TicketPriority, TicketStatus, UserRole } from "@/types";
+import type { BulkActionInput } from "@/types";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("es-ES", {
@@ -98,7 +100,7 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
     if (!bulkActionType || selectedTickets.size === 0) return;
 
     const ticketIds = Array.from(selectedTickets);
-    let actionData: any = {};
+    let actionData: BulkActionInput["data"] = {};
 
     switch (bulkActionType) {
       case "update_status":
@@ -119,7 +121,7 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
     }
 
     bulkAction.mutate(
-      { ticketIds, action: bulkActionType as any, data: actionData },
+      { ticketIds, action: bulkActionType as BulkActionInput["action"], data: actionData },
       {
         onSuccess: (res) => {
           toast.success(`${res.data.processed} tickets procesados`);
@@ -134,8 +136,16 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
 
   return (
     <div>
-      {isAgent && someSelected && (
-        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 p-3">
+      <AnimatePresence mode="wait">
+        {isAgent && someSelected && (
+          <motion.div
+            key="bulk-toolbar"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="mb-3 flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 p-3"
+          >
           <span className="text-sm font-medium">
             {selectedTickets.size} ticket{selectedTickets.size > 1 ? "s" : ""} seleccionado{selectedTickets.size > 1 ? "s" : ""}
           </span>
@@ -203,8 +213,9 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
           <Button size="sm" variant="ghost" onClick={() => { clearSelectedTickets(); setBulkActionType(""); }}>
             Cancelar
           </Button>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="rounded-md border">
         <Table>
@@ -227,10 +238,18 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tickets.map((ticket) => {
-              const aiCfg = aiStatusConfig[ticket.aiStatus] || aiStatusConfig.PENDING;
-              return (
-                <TableRow key={ticket.id} className="cursor-pointer hover:bg-muted/50">
+            <AnimatePresence mode="popLayout">
+              {tickets.map((ticket, index) => {
+                const aiCfg = aiStatusConfig[ticket.aiStatus] || aiStatusConfig.PENDING;
+                return (
+                  <motion.tr
+                    key={ticket.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: -100 }}
+                    transition={{ duration: 0.2, delay: index * 0.05 }}
+                    className="border-b hover:bg-muted/50 cursor-pointer"
+                  >
                   {isAgent && (
                     <TableCell>
                       <Checkbox
@@ -240,12 +259,20 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
                     </TableCell>
                   )}
                   <TableCell>
-                    <Link
-                      href={`${basePath}/tickets/${ticket.id}`}
-                      className="font-medium hover:underline"
-                    >
-                      {ticket.title}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`${basePath}/tickets/${ticket.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {ticket.title}
+                      </Link>
+                      {ticket.hasNewMessage && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          <MessageCircle className="h-3 w-3" />
+                          Mensaje nuevo
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={ticket.status} />
@@ -275,9 +302,10 @@ export function TicketTable({ basePath = "/dashboard" }: TicketTableProps) {
                   <TableCell className="text-muted-foreground">
                     {formatDate(ticket.createdAt)}
                   </TableCell>
-                </TableRow>
-              );
-            })}
+                  </motion.tr>
+                );
+              })}
+            </AnimatePresence>
           </TableBody>
         </Table>
       </div>

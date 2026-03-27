@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { ticketRepository } from "../repositories/ticket.repository";
 import { auditRepository } from "../repositories/audit.repository";
 import { notificationRepository } from "../repositories/notification.repository";
+import { ticketReadRepository } from "../repositories/ticket-read.repository";
 import { webhookService } from "../services/webhook.service";
 import { NotFoundError, ForbiddenError } from "@repo/shared";
 import { sanitizeText } from "../lib/sanitize";
@@ -34,6 +35,25 @@ ticketRoutes.get("/", async (c) => {
     assignedTo, unassigned, aiStatus, confidenceMin, confidenceMax,
     dateFrom, dateTo, sortBy, sortOrder,
   });
+
+  // Calculate hasNewMessage for each ticket
+  const ticketIds = result.data.map((t: any) => t.id);
+  if (ticketIds.length > 0) {
+    const [readDates, lastCommentDates] = await Promise.all([
+      ticketReadRepository.getLastReadDates(userId, ticketIds),
+      ticketReadRepository.getLastCommentDates(ticketIds, userId),
+    ]);
+
+    result.data = result.data.map((ticket: any) => {
+      const lastRead = readDates.get(ticket.id);
+      const lastComment = lastCommentDates.get(ticket.id);
+      const hasNewMessage = lastComment
+        ? !lastRead || lastComment > lastRead
+        : false;
+      return { ...ticket, hasNewMessage };
+    });
+  }
+
   return c.json({ success: true, data: result });
 });
 
@@ -51,6 +71,9 @@ ticketRoutes.get("/:id", async (c) => {
   if (role === "USER" && ticket.createdById !== userId) {
     throw new ForbiddenError("You can only view your own tickets");
   }
+
+  // Mark ticket as read by this user
+  await ticketReadRepository.markAsRead(userId!, id);
 
   return c.json({ success: true, data: ticket });
 });

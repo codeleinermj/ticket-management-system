@@ -327,7 +327,7 @@ class ApiClient {
 
   // Bulk actions
   async bulkAction(data: BulkActionInput) {
-    return this.request<ApiResponse<{ processed: number; failed: number; results: any[] }>>("/api/tickets/bulk", {
+    return this.request<ApiResponse<{ processed: number; failed: number; results: unknown[] }>>("/api/tickets/bulk", {
       method: "POST",
       body: JSON.stringify(data),
     });

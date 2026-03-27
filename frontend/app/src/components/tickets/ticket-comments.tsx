@@ -54,6 +54,7 @@ export function TicketComments({ ticketId }: { ticketId: string }) {
         setTimeout(() => scrollToBottom(), 50);
       } else {
         // Show "new message" indicator
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setShowNewMessage(true);
       }
     }

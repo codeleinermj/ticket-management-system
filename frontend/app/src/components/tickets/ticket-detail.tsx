@@ -33,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TicketStatus, UserRole } from "@/types";
 import { ArrowLeft, Trash2, HandMetal } from "lucide-react";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 
 interface TicketDetailProps {
   ticketId: string;
@@ -128,9 +129,34 @@ export function TicketDetail({ ticketId, basePath = "/dashboard" }: TicketDetail
     );
   };
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.1,
+      },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.4 },
+    },
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
+    <motion.div
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
+      <motion.div variants={itemVariants} className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -169,9 +195,9 @@ export function TicketDetail({ ticketId, basePath = "/dashboard" }: TicketDetail
             </Button>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <motion.div variants={itemVariants} className="grid gap-6 lg:grid-cols-3">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           <Card>
@@ -303,7 +329,7 @@ export function TicketDetail({ ticketId, basePath = "/dashboard" }: TicketDetail
             </CardContent>
           </Card>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

@@ -27,6 +27,7 @@ import type { CreateTicketInput } from "@/types";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { ApiRequestError } from "@/lib/api";
+import { motion } from "framer-motion";
 
 export function CreateTicketDialog() {
   const [open, setOpen] = useState(false);
@@ -81,8 +82,18 @@ export function CreateTicketDialog() {
               el ticket si no seleccionas prioridad o categoria.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <motion.div
+            className="space-y-4 py-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ staggerChildren: 0.05, delayChildren: 0.1 }}
+          >
+            <motion.div
+              className="space-y-2"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
               <Label htmlFor="title">Titulo</Label>
               <Input
                 id="title"
@@ -93,8 +104,13 @@ export function CreateTicketDialog() {
                 minLength={3}
                 maxLength={200}
               />
-            </div>
-            <div className="space-y-2">
+            </motion.div>
+            <motion.div
+              className="space-y-2"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.05 }}
+            >
               <Label htmlFor="description">Descripcion</Label>
               <Textarea
                 id="description"
@@ -106,8 +122,13 @@ export function CreateTicketDialog() {
                 maxLength={5000}
                 rows={4}
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            </motion.div>
+            <motion.div
+              className="grid grid-cols-2 gap-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+            >
               <div className="space-y-2">
                 <Label>Prioridad</Label>
                 <Select
@@ -151,11 +172,16 @@ export function CreateTicketDialog() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
+            </motion.div>
+            <motion.p
+              className="text-xs text-muted-foreground"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.15 }}
+            >
               Deja en blanco para clasificacion automatica por IA
-            </p>
-          </div>
+            </motion.p>
+          </motion.div>
           <DialogFooter>
             <Button
               type="button"

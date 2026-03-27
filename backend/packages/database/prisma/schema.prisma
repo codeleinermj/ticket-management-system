@@ -93,6 +93,7 @@ model Ticket {
   aiResults   AiResult[]
   comments    Comment[]
   attachments Attachment[]
+  ticketReads TicketRead[]
 
   @@index([status])
   @@index([priority])
@@ -221,4 +222,15 @@ model SlaConfig {
   updatedAt          DateTime       @updatedAt
 
   @@map("sla_configs")
+}
+
+model TicketRead {
+  userId     String
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime @default(now())
+
+  @@id([userId, ticketId])
+  @@index([userId])
+  @@map("ticket_reads")
 }

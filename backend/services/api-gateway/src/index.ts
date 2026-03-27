@@ -26,11 +26,11 @@ app.use("*", honoLogger());
 app.use("*", secureHeaders({
   contentSecurityPolicy: {
     defaultSrc: ["'self'"],
-    scriptSrc: ["'self'"],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", "data:", "blob:"],
+    scriptSrc: ["'self'", "https://cdn.jsdelivr.net", "'unsafe-inline'"],
+    styleSrc: ["'self'", "https://cdn.jsdelivr.net", "'unsafe-inline'"],
+    imgSrc: ["'self'", "data:", "blob:", "https://cdn.jsdelivr.net"],
     connectSrc: ["'self'", "ws://localhost:*", "wss://*"],
-    fontSrc: ["'self'"],
+    fontSrc: ["'self'", "https://cdn.jsdelivr.net"],
     objectSrc: ["'none'"],
     frameAncestors: ["'none'"],
   },

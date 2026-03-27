@@ -22,7 +22,7 @@ function Checkbox({ className, checked, onCheckedChange, ...props }: CheckboxPro
         className
       )}
       onClick={() => onCheckedChange?.(!checked)}
-      {...(props as any)}
+      {...(props as React.ButtonHTMLAttributes<HTMLButtonElement>)}
     >
       {checked && <Check className="h-3.5 w-3.5" />}
     </button>

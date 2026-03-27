@@ -22,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useState } from "react";
+import { motion } from "framer-motion";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, exact: true },
@@ -43,11 +44,10 @@ export function Sidebar() {
     .slice(0, 2);
 
   return (
-    <aside
-      className={cn(
-        "flex h-screen flex-col border-r bg-sidebar transition-all duration-200",
-        collapsed ? "w-16" : "w-64"
-      )}
+    <motion.aside
+      animate={{ width: collapsed ? 64 : 256 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className="flex h-screen flex-col border-r bg-sidebar"
     >
       <div className="flex h-14 items-center justify-between px-4">
         {!collapsed && (
@@ -72,7 +72,7 @@ export function Sidebar() {
 
       <Separator />
 
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1 p-2 relative">
         {navigation.map((item) => {
           const isActive = item.exact
             ? pathname === item.href
@@ -83,14 +83,23 @@ export function Sidebar() {
               key={item.name}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium",
                 isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  ? "text-primary-foreground"
+                  : "text-muted-foreground hover:text-accent-foreground"
               )}
             >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>{item.name}</span>}
+              {isActive && (
+                <motion.div
+                  layoutId="activeNavIndicator"
+                  className="absolute inset-0 bg-primary rounded-md"
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">
+                <item.icon className="h-4 w-4 shrink-0" />
+              </span>
+              {!collapsed && <span className="relative z-10">{item.name}</span>}
             </Link>
           );
 
@@ -143,6 +152,6 @@ export function Sidebar() {
           </Tooltip>
         </div>
       </div>
-    </aside>
+    </motion.aside>
   );
 }

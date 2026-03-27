@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Clock, AlertTriangle, AlertCircle, CheckCircle } from "lucide-react";
-import type { Ticket, SlaConfig, TicketPriority } from "@/types";
+import type { Ticket, SlaConfig } from "@/types";
 
 const SLA_DEFAULTS: Record<string, number> = {
   CRITICAL: 60,
@@ -36,10 +36,12 @@ export function SlaDetailWidget({ ticket }: { ticket: Ticket }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 60000);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -77,7 +79,6 @@ export function SlaDetailWidget({ ticket }: { ticket: Ticket }) {
   } else if (ticket.status === "CLOSED" || ticket.status === "RESOLVED") {
     return null;
   } else {
-    const now = Date.now();
     remainingMinutes = Math.floor((deadline - now) / 60000);
     const warningThreshold = slaMinutes * 0.25;
 
