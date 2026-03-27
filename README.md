@@ -37,20 +37,43 @@ Un sistema completo donde los usuarios crean tickets de soporte y la IA los clas
 ## Arquitectura
 
 ```
-┌─────────────┐     HTTP      ┌──────────────┐     HTTP      ┌─────────────────┐
-│   Frontend   │ ───────────► │  API Gateway  │ ───────────► │ Ticket Service  │
-│  (Next.js)   │ ◄──── WS ──  │  (Hono+Bun)  │              │  (Hono+Prisma)  │
-└─────────────┘              └──────────────┘              └────────┬────────┘
-                                                                    │ Redis Pub/Sub
-                                                            ┌───────▼────────┐
-                                                            │   AI Worker    │
-                                                            │ (OpenAI/Gemini)│
-                                                            └────────────────┘
+  Browser (Next.js + React 19)
+        │ HTTP + WebSocket
+        ▼
+  ┌─────────────────────────────────────┐
+  │  API Gateway  :3000  (Hono + Bun)   │
+  │  Auth · Rate Limit · CORS · Swagger │
+  └──────────────┬──────────────────────┘
+                 │ HTTP proxy
+                 ▼
+  ┌─────────────────────────────────────┐       ┌──────────────────┐
+  │  Ticket Service  :3001 (Hono + Bun) │──ORM──►  PostgreSQL 16   │
+  │  Tickets · Users · SLA · Audit Log  │       │  Usuarios        │
+  └──────────────┬──────────────────────┘       │  Tickets         │
+                 │ Pub/Sub (ticket-events)       │  Comentarios     │
+                 ▼                               │  AiResults       │
+  ┌─────────────────────────────────────┐       └──────────────────┘
+  │  Redis 7                            │
+  │  Pub/Sub · Rate limit · Sessions    │
+  └──────────────┬──────────────────────┘
+                 │ Subscribe
+                 ▼
+  ┌─────────────────────────────────────┐
+  │  AI Worker  (Node.js)               │
+  │  Strategy: OpenAI │ Gemini │ Mock   │
+  │  → clasifica y escribe en PostgreSQL│
+  └─────────────────────────────────────┘
 ```
 
-- **API Gateway** — Punto de entrada unico. Maneja autenticacion, rate limiting, CORS y WebSocket.
-- **Ticket Service** — Logica de negocio, CRUD, auditoria y SLA. Publica eventos a Redis.
-- **AI Worker** — Consume eventos de Redis y clasifica tickets automaticamente con IA.
+**Flujo:** Usuario crea ticket → Ticket Service guarda en DB y publica en Redis → AI Worker clasifica con IA (categoria, prioridad, respuesta sugerida) → resultado guardado en DB → API Gateway notifica al frontend via WebSocket.
+
+| Servicio | Responsabilidad |
+|----------|----------------|
+| **API Gateway** | Unico punto de entrada. Auth, rate limiting, WebSocket, proxy |
+| **Ticket Service** | CRUD, SLA, comentarios, adjuntos, auditoria, notificaciones |
+| **AI Worker** | Clasificacion automatica con Strategy Pattern (OpenAI/Gemini/Mock) |
+| **packages/database** | Schema Prisma centralizado compartido |
+| **packages/shared** | Tipos Zod y validaciones compartidas |
 
 ## Inicio rapido
 
